@@ -402,9 +402,7 @@ private:
     // There are multiple states defined such as STABILIZE, ACRO,
     Mode::Number control_mode;
     ModeReason control_mode_reason = ModeReason::UNKNOWN;
-
     Mode::Number prev_control_mode;
-    ModeReason prev_control_mode_reason = ModeReason::UNKNOWN;
 
     RCMapper rcmap;
 
@@ -535,11 +533,6 @@ private:
     // Parachute release
 #if PARACHUTE == ENABLED
     AP_Parachute parachute{relay};
-#endif
-
-    // Button 
-#if BUTTON_ENABLED == ENABLED
-    AP_Button button;
 #endif
 
     // Landing Gear Controller
