@@ -37,6 +37,7 @@
 #include <uavcan/equipment/indication/BeepCommand.h>
 #include <uavcan/equipment/indication/LightsCommand.h>
 #include <uavcan/equipment/range_sensor/Measurement.h>
+#include <uavcan/equipment/hardpoint/Command.h>
 #include <ardupilot/indication/SafetyState.h>
 #include <ardupilot/indication/Button.h>
 #include <ardupilot/equipment/trafficmonitor/TrafficReport.h>
@@ -90,11 +91,11 @@ static uavcan_protocol_NodeStatus node_status;
 
 
 /**
- * Returns a pseudo random float in the range [0, 1].
+ * Returns a pseudo random integer in a given range
  */
-static float getRandomFloat(void)
+static uint16_t get_random_range(uint16_t range)
 {
-    return float(get_random16()) / 0xFFFF;
+    return get_random16() % range;
 }
 
 
@@ -369,7 +370,7 @@ static void handle_allocation_response(CanardInstance* ins, CanardRxTransfer* tr
     // Rule C - updating the randomized time interval
     send_next_node_id_allocation_request_at_ms =
         AP_HAL::millis() + UAVCAN_PROTOCOL_DYNAMIC_NODE_ID_ALLOCATION_MIN_REQUEST_PERIOD_MS +
-        (uint32_t)(getRandomFloat() * UAVCAN_PROTOCOL_DYNAMIC_NODE_ID_ALLOCATION_MAX_FOLLOWUP_DELAY_MS);
+        get_random_range(UAVCAN_PROTOCOL_DYNAMIC_NODE_ID_ALLOCATION_MAX_FOLLOWUP_DELAY_MS);
 
     if (transfer->source_node_id == CANARD_BROADCAST_NODE_ID)
     {
@@ -812,7 +813,14 @@ static void can_rxfull_cb(CANDriver *canp, uint32_t flags)
 static void processRx(void)
 {
     CANRxFrame rxmsg;
-    while (rxbuffer.pop(rxmsg)) {
+    while (true) {
+        bool have_msg;
+        chSysLock();
+        have_msg = rxbuffer.pop(rxmsg);
+        chSysUnlock();
+        if (!have_msg) {
+            break;
+        }
         CanardCANFrame rx_frame {};
 
         //palToggleLine(HAL_GPIO_PIN_LED);
@@ -935,7 +943,7 @@ static void can_wait_node_id(void)
 
         send_next_node_id_allocation_request_at_ms =
             AP_HAL::millis() + UAVCAN_PROTOCOL_DYNAMIC_NODE_ID_ALLOCATION_MIN_REQUEST_PERIOD_MS +
-            (uint32_t)(getRandomFloat() * UAVCAN_PROTOCOL_DYNAMIC_NODE_ID_ALLOCATION_MAX_FOLLOWUP_DELAY_MS);
+            get_random_range(UAVCAN_PROTOCOL_DYNAMIC_NODE_ID_ALLOCATION_MAX_FOLLOWUP_DELAY_MS);
 
         while ((AP_HAL::millis() < send_next_node_id_allocation_request_at_ms) &&
                (canardGetLocalNodeID(&canard) == CANARD_BROADCAST_NODE_ID))
@@ -1036,6 +1044,62 @@ void AP_Periph_FW::can_start()
     can_wait_node_id();
 }
 
+#ifdef HAL_PERIPH_ENABLE_PWM_HARDPOINT
+void AP_Periph_FW::pwm_hardpoint_init()
+{
+    hal.gpio->attach_interrupt(
+        PWM_HARDPOINT_PIN,
+        FUNCTOR_BIND_MEMBER(&AP_Periph_FW::pwm_irq_handler, void, uint8_t, bool, uint32_t), AP_HAL::GPIO::INTERRUPT_BOTH);
+
+}
+
+/*
+  called on PWM pin transition
+ */
+void AP_Periph_FW::pwm_irq_handler(uint8_t pin, bool pin_state, uint32_t timestamp)
+{
+    if (pin_state == 0 && pwm_hardpoint.last_state == 1 && pwm_hardpoint.last_ts_us != 0) {
+        uint32_t width = timestamp - pwm_hardpoint.last_ts_us;
+        if (width > 500 && width < 2500) {
+            pwm_hardpoint.pwm_value = width;
+            if (width > pwm_hardpoint.highest_pwm) {
+                pwm_hardpoint.highest_pwm = width;
+            }
+        }
+    }
+    pwm_hardpoint.last_state = pin_state;
+    pwm_hardpoint.last_ts_us = timestamp;
+}
+
+void AP_Periph_FW::pwm_hardpoint_update()
+{
+    uint32_t now = AP_HAL::millis();
+    // send at 10Hz
+    void *save = hal.scheduler->disable_interrupts_save();
+    uint16_t value = pwm_hardpoint.highest_pwm;
+    pwm_hardpoint.highest_pwm = 0;
+    hal.scheduler->restore_interrupts(save);
+    float rate = g.hardpoint_rate;
+    rate = constrain_float(rate, 10, 100);
+    if (value > 0 && now - pwm_hardpoint.last_send_ms >= 1000U/rate) {
+        pwm_hardpoint.last_send_ms = now;
+        uavcan_equipment_hardpoint_Command cmd {};
+        cmd.hardpoint_id = g.hardpoint_id;
+        cmd.command = value;
+
+        uint8_t buffer[UAVCAN_EQUIPMENT_HARDPOINT_COMMAND_MAX_SIZE];
+        uint16_t total_size = uavcan_equipment_hardpoint_Command_encode(&cmd, buffer);
+        canardBroadcast(&canard,
+                        UAVCAN_EQUIPMENT_HARDPOINT_COMMAND_SIGNATURE,
+                        UAVCAN_EQUIPMENT_HARDPOINT_COMMAND_ID,
+                        &transfer_id,
+                        CANARD_TRANSFER_PRIORITY_LOW,
+                        &buffer[0],
+                        total_size);
+    }
+}
+#endif // HAL_PERIPH_ENABLE_PWM_HARDPOINT
+
 
 void AP_Periph_FW::can_update()
 {
@@ -1058,6 +1122,9 @@ void AP_Periph_FW::can_update()
 #endif
 #ifdef HAL_GPIO_PIN_SAFE_BUTTON
     can_safety_button_update();
+#endif
+#ifdef HAL_PERIPH_ENABLE_PWM_HARDPOINT
+    pwm_hardpoint_update();
 #endif
     processTx();
     processRx();
@@ -1317,6 +1384,9 @@ void AP_Periph_FW::can_gps_update(void)
 void AP_Periph_FW::can_baro_update(void)
 {
 #ifdef HAL_PERIPH_ENABLE_BARO
+    if (!periph.g.baro_enable) {
+        return;
+    }
     baro.update();
     if (last_baro_update_ms == baro.get_last_update()) {
         return;

@@ -87,7 +87,7 @@ const AP_Param::GroupInfo RangeFinder::var_info[] = {
 
     // @Group: 4_
     // @Path: AP_RangeFinder_Wasp.cpp
-    AP_SUBGROUPVARPTR(drivers[0], "4_",  60, RangeFinder, backend_var_info[3]),
+    AP_SUBGROUPVARPTR(drivers[3], "4_",  60, RangeFinder, backend_var_info[3]),
 #endif
 
 #if RANGEFINDER_MAX_INSTANCES > 4
@@ -371,13 +371,16 @@ void RangeFinder::detect_instance(uint8_t instance, uint8_t& serial_instance)
         }
         break;
     case Type::VL53L0X:
+    case Type::VL53L1X_Short:
             FOREACH_I2C(i) {
                 if (_add_backend(AP_RangeFinder_VL53L0X::detect(state[instance], params[instance],
                                                                  hal.i2c_mgr->get_device(i, params[instance].address)))) {
                     break;
                 }
                 if (_add_backend(AP_RangeFinder_VL53L1X::detect(state[instance], params[instance],
-                                                                hal.i2c_mgr->get_device(i, params[instance].address)))) {
+                                                                hal.i2c_mgr->get_device(i, params[instance].address),
+                                                                _type == Type::VL53L1X_Short ?  AP_RangeFinder_VL53L1X::DistanceMode::Short :
+                                                                                                AP_RangeFinder_VL53L1X::DistanceMode::Long))) {
                     break;
                 }
             }

@@ -24,6 +24,7 @@
 #include <AP_Logger/AP_Logger.h>
 #include <AP_OpticalFlow/AP_OpticalFlow.h>
 #include <AP_Vehicle/AP_Vehicle.h>
+#include <AP_RangeFinder/AP_RangeFinder.h>
 #include <AP_RangeFinder/AP_RangeFinder_Backend.h>
 #include <AP_Airspeed/AP_Airspeed.h>
 #include <AP_Camera/AP_Camera.h>
@@ -39,6 +40,7 @@
 #include <AP_OpticalFlow/OpticalFlow.h>
 #include <AP_Baro/AP_Baro.h>
 #include <AP_EFI/AP_EFI.h>
+#include <AP_Proximity/AP_Proximity.h>
 
 #include <stdio.h>
 
@@ -60,6 +62,7 @@
     #include <AP_KDECAN/AP_KDECAN.h>
   #endif
   #include <AP_ToshibaCAN/AP_ToshibaCAN.h>
+  #include <AP_PiccoloCAN/AP_PiccoloCAN.h>
 #endif
 
 #include <AP_BattMonitor/AP_BattMonitor.h>
@@ -597,12 +600,10 @@ void GCS_MAVLINK::handle_param_value(const mavlink_message_t &msg)
 
 void GCS_MAVLINK::send_text(MAV_SEVERITY severity, const char *fmt, ...) const
 {
-    char text[MAVLINK_MSG_STATUSTEXT_FIELD_TEXT_LEN+1];
     va_list arg_list;
     va_start(arg_list, fmt);
-    hal.util->vsnprintf(text, sizeof(text), fmt, arg_list);
+    gcs().send_textv(severity, fmt, arg_list, (1<<chan));
     va_end(arg_list);
-    gcs().send_statustext(severity, (1<<chan), text);
 }
 
 void GCS_MAVLINK::handle_radio_status(const mavlink_message_t &msg, bool log_radio)
@@ -1759,19 +1760,21 @@ void GCS_MAVLINK::send_ahrs()
 /*
     send a statustext text string to specific MAVLink bitmask
 */
-void GCS::send_statustext(MAV_SEVERITY severity, uint8_t dest_bitmask, const char *text)
+void GCS::send_textv(MAV_SEVERITY severity, const char *fmt, va_list arg_list, uint8_t dest_bitmask)
 {
+    char text[MAVLINK_MSG_STATUSTEXT_FIELD_TEXT_LEN+1];
+    if (hal.util->vsnprintf(text, sizeof(text), fmt, arg_list) > MAVLINK_MSG_STATUSTEXT_FIELD_TEXT_LEN+1) {
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
-    if (strlen(text) > MAVLINK_MSG_STATUSTEXT_FIELD_TEXT_LEN) {
         AP_HAL::panic("Statustext (%s) too long", text);
-    }
 #endif
+    }
 
     AP_Logger *logger = AP_Logger::get_singleton();
     if (logger != nullptr) {
         logger->Write_Message(text);
     }
 
+    frsky = AP::frsky_telem();
     if (frsky != nullptr) {
         frsky->queue_message(severity, text);
     }
@@ -1783,7 +1786,15 @@ void GCS::send_statustext(MAV_SEVERITY severity, uint8_t dest_bitmask, const cha
 
     // filter destination ports to only allow active ports.
     statustext_t statustext{};
-    statustext.bitmask = (GCS_MAVLINK::active_channel_mask()  | GCS_MAVLINK::streaming_channel_mask() ) & dest_bitmask;
+    if (update_send_has_been_called) {
+        statustext.bitmask = (GCS_MAVLINK::active_channel_mask()  | GCS_MAVLINK::streaming_channel_mask() );
+    } else {
+        // we have not yet initialised the streaming-channel-mask,
+        // which is done as part of the update() call.  So just send
+        // it to all channels:
+        statustext.bitmask = (1<<_num_gcs)-1;
+    }
+    statustext.bitmask &= dest_bitmask;
     if (!statustext.bitmask) {
         // nowhere to send
         return;
@@ -1860,6 +1871,7 @@ void GCS::send_message(enum ap_message id)
 
 void GCS::update_send()
 {
+    update_send_has_been_called = true;
     if (!initialised_missionitemprotocol_objects) {
         initialised_missionitemprotocol_objects = true;
         // once-only initialisation of MissionItemProtocol objects:
@@ -2061,12 +2073,9 @@ void GCS_MAVLINK::send_opticalflow()
     const Vector2f &flowRate = optflow->flowRate();
     const Vector2f &bodyRate = optflow->bodyRate();
 
-    const AP_AHRS &ahrs = AP::ahrs();
-    float hagl = 0;
-    if (ahrs.have_inertial_nav()) {
-        if (!ahrs.get_hagl(hagl)) {
-            return;
-        }
+    float hagl;
+    if (!AP::ahrs().get_hagl(hagl)) {
+        hagl = 0;
     }
 
     // populate and send message
@@ -2481,7 +2490,7 @@ void GCS_MAVLINK::send_vfr_hud()
         vfr_hud_airspeed(),
         ahrs.groundspeed(),
         (ahrs.yaw_sensor / 100) % 360,
-        vfr_hud_throttle(),
+        abs(vfr_hud_throttle()),
         vfr_hud_alt(),
         vfr_hud_climbrate());
 }
@@ -3021,6 +3030,40 @@ void GCS_MAVLINK::handle_optical_flow(const mavlink_message_t &msg)
     optflow->handle_msg(msg);
 }
 
+
+/*
+  handle MAV_CMD_FIXED_MAG_CAL_YAW
+ */
+MAV_RESULT GCS_MAVLINK::handle_fixed_mag_cal_yaw(const mavlink_command_long_t &packet)
+{
+    Compass &compass = AP::compass();
+    return compass.mag_cal_fixed_yaw(packet.param1,
+                                     uint8_t(packet.param2),
+                                     packet.param3,
+                                     packet.param4);
+}
+
+void GCS_MAVLINK::handle_distance_sensor(const mavlink_message_t &msg)
+{
+    RangeFinder *rangefinder = AP::rangefinder();
+    if (rangefinder != nullptr) {
+        rangefinder->handle_msg(msg);
+    }
+
+    AP_Proximity *proximity = AP::proximity();
+    if (proximity != nullptr) {
+        proximity->handle_msg(msg);
+    }
+}
+
+void GCS_MAVLINK::handle_obstacle_distance(const mavlink_message_t &msg)
+{
+    AP_Proximity *proximity = AP::proximity();
+    if (proximity != nullptr) {
+        proximity->handle_msg(msg);
+    }
+}
+
 /*
   handle messages which don't require vehicle specific data
  */
@@ -3195,7 +3238,17 @@ void GCS_MAVLINK::handle_common_message(const mavlink_message_t &msg)
     case MAVLINK_MSG_ID_OPTICAL_FLOW:
         handle_optical_flow(msg);
         break;
+
+    case MAVLINK_MSG_ID_DISTANCE_SENSOR:
+        handle_distance_sensor(msg);
+        break;
+
+    case MAVLINK_MSG_ID_OBSTACLE_DISTANCE:
+        handle_obstacle_distance(msg);
+        break;
+
     }
+
 }
 
 void GCS_MAVLINK::handle_common_mission_message(const mavlink_message_t &msg)
@@ -3441,6 +3494,9 @@ MAV_RESULT GCS_MAVLINK::handle_command_preflight_can(const mavlink_command_long_
                 UNUSED_RESULT(start_stop); // prevent unused variable error
 #endif
             }
+            case AP_BoardConfig_CAN::Protocol_Type_PiccoloCAN:
+                // TODO - Run PiccoloCAN pre-flight checks here
+                break;
             case AP_BoardConfig_CAN::Protocol_Type_UAVCAN:
             case AP_BoardConfig_CAN::Protocol_Type_None:
             default:
@@ -3743,6 +3799,10 @@ MAV_RESULT GCS_MAVLINK::handle_command_long_packet(const mavlink_command_long_t 
 
         return MAV_RESULT_UNSUPPORTED;
 
+    case MAV_CMD_FIXED_MAG_CAL_YAW:
+        result = handle_fixed_mag_cal_yaw(packet);
+        break;
+        
     default:
         result = MAV_RESULT_UNSUPPORTED;
         break;
@@ -4487,6 +4547,15 @@ bool GCS_MAVLINK::try_send_message(const enum ap_message id)
                     }
                     break;
                 }
+#if HAL_PICCOLO_CAN_ENABLE
+                case AP_BoardConfig_CAN::Protocol_Type_PiccoloCAN: {
+                    AP_PiccoloCAN *ap_pcan = AP_PiccoloCAN::get_pcan(i);
+                    if (ap_pcan != nullptr) {
+                        ap_pcan->send_esc_telemetry_mavlink(uint8_t(chan));
+                    }
+                    break;
+                }
+#endif
                 case AP_BoardConfig_CAN::Protocol_Type_UAVCAN:
                 case AP_BoardConfig_CAN::Protocol_Type_None:
                 default:

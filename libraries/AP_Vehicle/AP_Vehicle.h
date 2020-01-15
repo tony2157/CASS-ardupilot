@@ -32,8 +32,10 @@
 #include <AP_RangeFinder/AP_RangeFinder.h>
 #include <AP_Relay/AP_Relay.h>                      // APM relay
 #include <AP_RSSI/AP_RSSI.h>                        // RSSI Library
+#include <AP_Scheduler/AP_Scheduler.h>
 #include <AP_SerialManager/AP_SerialManager.h>      // Serial manager library
 #include <AP_ServoRelayEvents/AP_ServoRelayEvents.h>
+#include <AP_Camera/AP_RunCam.h>
 
 class AP_Vehicle : public AP_HAL::HAL::Callbacks {
 
@@ -43,6 +45,7 @@ public:
         if (_singleton) {
             AP_HAL::panic("Too many Vehicles");
         }
+        AP_Param::setup_object_defaults(this, var_info);
         _singleton = this;
     }
 
@@ -53,6 +56,7 @@ public:
     static AP_Vehicle *get_singleton();
 
     bool virtual set_mode(const uint8_t new_mode, const ModeReason reason) = 0;
+    uint8_t virtual get_mode() const = 0;
 
     /*
       common parameters for fixed wing aircraft
@@ -107,6 +111,43 @@ public:
         AP_Int16 angle_max;
     };
 
+    void get_common_scheduler_tasks(const AP_Scheduler::Task*& tasks, uint8_t& num_tasks);
+
+    // initialize the vehicle. Called from AP_BoardConfig
+    void init_vehicle();
+
+    /*
+      set the "likely flying" flag. This is not guaranteed to be
+      accurate, but is the vehicle codes best guess as to the whether
+      the vehicle is currently flying
+    */
+    void set_likely_flying(bool b) {
+        if (b && !likely_flying) {
+            _last_flying_ms = AP_HAL::millis();
+        }
+        likely_flying = b;
+    }
+
+    /*
+      get the likely flying status. Returns true if the vehicle code
+      thinks we are flying at the moment. Not guaranteed to be
+      accurate
+    */
+    bool get_likely_flying(void) const {
+        return likely_flying;
+    }
+
+    /*
+      return time in milliseconds since likely_flying was set
+      true. Returns zero if likely_flying is currently false
+    */
+    uint32_t get_time_flying_ms(void) const {
+        if (!likely_flying) {
+            return 0;
+        }
+        return AP_HAL::millis() - _last_flying_ms;
+    }
+
 protected:
 
     // board specific config
@@ -126,7 +167,9 @@ protected:
     RangeFinder rangefinder;
 
     AP_RSSI rssi;
-
+#if HAL_RUNCAM_ENABLED
+    AP_RunCam runcam;
+#endif
     AP_SerialManager serial_manager;
 
     AP_Relay relay;
@@ -146,10 +189,18 @@ protected:
     AP_AHRS_DCM ahrs;
 #endif
 
+    static const struct AP_Param::GroupInfo var_info[];
+    static const struct AP_Scheduler::Task scheduler_tasks[];
+
 private:
 
     static AP_Vehicle *_singleton;
+    bool init_done;
 
+    // true if vehicle is probably flying
+    bool likely_flying;
+    // time when likely_flying last went true
+    uint32_t _last_flying_ms;
 };
 
 namespace AP {
@@ -157,5 +208,7 @@ namespace AP {
 };
 
 extern const AP_HAL::HAL& hal;
+
+extern const AP_Param::Info vehicle_var_info[];
 
 #include "AP_Vehicle_Type.h"

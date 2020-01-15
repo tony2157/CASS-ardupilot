@@ -175,7 +175,7 @@ const AP_Param::Info Copter::var_info[] = {
     // @Description: Controls whether failsafe will be invoked (and what action to take) when connection with Ground station is lost for at least 5 seconds. NB. The GCS Failsafe is only active when RC_OVERRIDE is being used to control the vehicle.
     // @Values: 0:Disabled,1:Enabled always RTL,2:Enabled Continue with Mission in Auto Mode (Deprecated in 4.0+),3:Enabled always SmartRTL or RTL,4:Enabled always SmartRTL or Land,5:Enabled always land (4.0+ Only)
     // @User: Standard
-    GSCALAR(failsafe_gcs, "FS_GCS_ENABLE", FS_GCS_ENABLED_ALWAYS_RTL),
+    GSCALAR(failsafe_gcs, "FS_GCS_ENABLE", FS_GCS_DISABLED),
 
     // @Param: GPS_HDOP_GOOD
     // @DisplayName: GPS Hdop Good
@@ -262,42 +262,42 @@ const AP_Param::Info Copter::var_info[] = {
     // @Param: FLTMODE1
     // @DisplayName: Flight Mode 1
     // @Description: Flight mode when Channel 5 pwm is <= 1230
-    // @Values: 0:Stabilize,1:Acro,2:AltHold,3:Auto,4:Guided,5:Loiter,6:RTL,7:Circle,9:Land,11:Drift,13:Sport,14:Flip,15:AutoTune,16:PosHold,17:Brake,18:Throw,19:Avoid_ADSB,20:Guided_NoGPS,21:Smart_RTL,22:FlowHold,23:Follow,24:ZigZag,25:SystemID,26:Autorotate
+    // @Values: 0:Stabilize,1:Acro,2:AltHold,3:Auto,4:Guided,5:Loiter,6:RTL,7:Circle,9:Land,11:Drift,13:Sport,14:Flip,15:AutoTune,16:PosHold,17:Brake,18:Throw,19:Avoid_ADSB,20:Guided_NoGPS,21:Smart_RTL,22:FlowHold,23:Follow,24:ZigZag,25:SystemID,26:Heli_Autorotate
     // @User: Standard
     GSCALAR(flight_mode1, "FLTMODE1",               (uint8_t)FLIGHT_MODE_1),
 
     // @Param: FLTMODE2
     // @DisplayName: Flight Mode 2
     // @Description: Flight mode when Channel 5 pwm is >1230, <= 1360
-    // @Values: 0:Stabilize,1:Acro,2:AltHold,3:Auto,4:Guided,5:Loiter,6:RTL,7:Circle,9:Land,11:Drift,13:Sport,14:Flip,15:AutoTune,16:PosHold,17:Brake,18:Throw,19:Avoid_ADSB,20:Guided_NoGPS,21:Smart_RTL,22:FlowHold,23:Follow,24:ZigZag,25:SystemID,26:Autorotate
+    // @Values: 0:Stabilize,1:Acro,2:AltHold,3:Auto,4:Guided,5:Loiter,6:RTL,7:Circle,9:Land,11:Drift,13:Sport,14:Flip,15:AutoTune,16:PosHold,17:Brake,18:Throw,19:Avoid_ADSB,20:Guided_NoGPS,21:Smart_RTL,22:FlowHold,23:Follow,24:ZigZag,25:SystemID,26:Heli_Autorotate
     // @User: Standard
     GSCALAR(flight_mode2, "FLTMODE2",               (uint8_t)FLIGHT_MODE_2),
 
     // @Param: FLTMODE3
     // @DisplayName: Flight Mode 3
     // @Description: Flight mode when Channel 5 pwm is >1360, <= 1490
-    // @Values: 0:Stabilize,1:Acro,2:AltHold,3:Auto,4:Guided,5:Loiter,6:RTL,7:Circle,9:Land,11:Drift,13:Sport,14:Flip,15:AutoTune,16:PosHold,17:Brake,18:Throw,19:Avoid_ADSB,20:Guided_NoGPS,21:Smart_RTL,22:FlowHold,23:Follow,24:ZigZag,25:SystemID,26:Autorotate
+    // @Values: 0:Stabilize,1:Acro,2:AltHold,3:Auto,4:Guided,5:Loiter,6:RTL,7:Circle,9:Land,11:Drift,13:Sport,14:Flip,15:AutoTune,16:PosHold,17:Brake,18:Throw,19:Avoid_ADSB,20:Guided_NoGPS,21:Smart_RTL,22:FlowHold,23:Follow,24:ZigZag,25:SystemID,26:Heli_Autorotate
     // @User: Standard
     GSCALAR(flight_mode3, "FLTMODE3",               (uint8_t)FLIGHT_MODE_3),
 
     // @Param: FLTMODE4
     // @DisplayName: Flight Mode 4
     // @Description: Flight mode when Channel 5 pwm is >1490, <= 1620
-    // @Values: 0:Stabilize,1:Acro,2:AltHold,3:Auto,4:Guided,5:Loiter,6:RTL,7:Circle,9:Land,11:Drift,13:Sport,14:Flip,15:AutoTune,16:PosHold,17:Brake,18:Throw,19:Avoid_ADSB,20:Guided_NoGPS,21:Smart_RTL,22:FlowHold,23:Follow,24:ZigZag,25:SystemID,26:Autorotate
+    // @Values: 0:Stabilize,1:Acro,2:AltHold,3:Auto,4:Guided,5:Loiter,6:RTL,7:Circle,9:Land,11:Drift,13:Sport,14:Flip,15:AutoTune,16:PosHold,17:Brake,18:Throw,19:Avoid_ADSB,20:Guided_NoGPS,21:Smart_RTL,22:FlowHold,23:Follow,24:ZigZag,25:SystemID,26:Heli_Autorotate
     // @User: Standard
     GSCALAR(flight_mode4, "FLTMODE4",               (uint8_t)FLIGHT_MODE_4),
 
     // @Param: FLTMODE5
     // @DisplayName: Flight Mode 5
     // @Description: Flight mode when Channel 5 pwm is >1620, <= 1749
-    // @Values: 0:Stabilize,1:Acro,2:AltHold,3:Auto,4:Guided,5:Loiter,6:RTL,7:Circle,9:Land,11:Drift,13:Sport,14:Flip,15:AutoTune,16:PosHold,17:Brake,18:Throw,19:Avoid_ADSB,20:Guided_NoGPS,21:Smart_RTL,22:FlowHold,23:Follow,24:ZigZag,25:SystemID,26:Autorotate
+    // @Values: 0:Stabilize,1:Acro,2:AltHold,3:Auto,4:Guided,5:Loiter,6:RTL,7:Circle,9:Land,11:Drift,13:Sport,14:Flip,15:AutoTune,16:PosHold,17:Brake,18:Throw,19:Avoid_ADSB,20:Guided_NoGPS,21:Smart_RTL,22:FlowHold,23:Follow,24:ZigZag,25:SystemID,26:Heli_Autorotate
     // @User: Standard
     GSCALAR(flight_mode5, "FLTMODE5",               (uint8_t)FLIGHT_MODE_5),
 
     // @Param: FLTMODE6
     // @DisplayName: Flight Mode 6
     // @Description: Flight mode when Channel 5 pwm is >=1750
-    // @Values: 0:Stabilize,1:Acro,2:AltHold,3:Auto,4:Guided,5:Loiter,6:RTL,7:Circle,9:Land,11:Drift,13:Sport,14:Flip,15:AutoTune,16:PosHold,17:Brake,18:Throw,19:Avoid_ADSB,20:Guided_NoGPS,21:Smart_RTL,22:FlowHold,23:Follow,24:ZigZag,25:SystemID,26:Autorotate
+    // @Values: 0:Stabilize,1:Acro,2:AltHold,3:Auto,4:Guided,5:Loiter,6:RTL,7:Circle,9:Land,11:Drift,13:Sport,14:Flip,15:AutoTune,16:PosHold,17:Brake,18:Throw,19:Avoid_ADSB,20:Guided_NoGPS,21:Smart_RTL,22:FlowHold,23:Follow,24:ZigZag,25:SystemID,26:Heli_Autorotate
     // @User: Standard
     GSCALAR(flight_mode6, "FLTMODE6",               (uint8_t)FLIGHT_MODE_6),
 
@@ -698,14 +698,12 @@ const AP_Param::Info Copter::var_info[] = {
     GSCALAR(throw_motor_start, "THROW_MOT_START", 0),
 #endif
 
-#if AP_TERRAIN_AVAILABLE && AC_TERRAIN
-    // @Param: TERRAIN_FOLLOW
-    // @DisplayName: Terrain Following use control
-    // @Description: This enables terrain following for RTL and LAND flight modes. To use this option TERRAIN_ENABLE must be 1 and the GCS must  support sending terrain data to the aircraft.  In RTL the RTL_ALT will be considered a height above the terrain.  In LAND mode the vehicle will slow to LAND_SPEED 10m above terrain (instead of 10m above home).  This parameter does not affect AUTO and Guided which use a per-command flag to determine if the height is above-home, absolute or above-terrain.
-    // @Values: 0:Do Not Use in RTL and Land,1:Use in RTL and Land
+    // @Param: RTL_ALT_TYPE
+    // @DisplayName: RTL mode altitude type
+    // @Description: RTL altitude type.  Set to 1 for Terrain following during RTL and then set WPNAV_RFND_USE=1 to use rangefinder or WPNAV_RFND_USE=0 to use Terrain database
+    // @Values: 0:Relative to Home, 1:Terrain
     // @User: Standard
-    GSCALAR(terrain_follow, "TERRAIN_FOLLOW", 0),
-#endif
+    GSCALAR(rtl_alt_type, "RTL_ALT_TYPE", 0),
 
 #if OSD_ENABLED == ENABLED
     // @Group: OSD
@@ -716,6 +714,10 @@ const AP_Param::Info Copter::var_info[] = {
     // @Group:
     // @Path: Parameters.cpp
     GOBJECT(g2, "",  ParametersG2),
+
+    // @Group:
+    // @Path: ../libraries/AP_Vehicle/AP_Vehicle.cpp
+    { AP_PARAM_GROUP, "", Parameters::k_param_vehicle, (const void *)&copter, {group_info : AP_Vehicle::var_info} },
 
     AP_VAREND
 };
@@ -960,8 +962,6 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @Path: ../libraries/AC_Autorotation/AC_Autorotation.cpp
     AP_SUBGROUPINFO(arot, "AROT_", 37, ParametersG2, AC_Autorotation),
 #endif
-
-
 
     AP_GROUPEND
 };
@@ -1293,19 +1293,8 @@ void Copter::convert_pid_parameters(void)
         AP_Param::convert_old_parameters(&notchfilt_conversion_info[i], 1.0f);
     }
 
-    const uint8_t old_rc_keys[14] = { Parameters::k_param_rc_1_old,  Parameters::k_param_rc_2_old,
-                                      Parameters::k_param_rc_3_old,  Parameters::k_param_rc_4_old,
-                                      Parameters::k_param_rc_5_old,  Parameters::k_param_rc_6_old,
-                                      Parameters::k_param_rc_7_old,  Parameters::k_param_rc_8_old,
-                                      Parameters::k_param_rc_9_old,  Parameters::k_param_rc_10_old,
-                                      Parameters::k_param_rc_11_old, Parameters::k_param_rc_12_old,
-                                      Parameters::k_param_rc_13_old, Parameters::k_param_rc_14_old };
-    const uint16_t old_aux_chan_mask = 0x3FF0;
-    // note that we don't pass in rcmap as we don't want output channel functions changed based on rcmap
-    if (SRV_Channels::upgrade_parameters(old_rc_keys, old_aux_chan_mask, nullptr)) {
-        // the rest needs to be done after motors allocation
-        upgrading_frame_params = true;
-    }
+    // make any SRV_Channel upgrades needed
+    SRV_Channels::upgrade_parameters();
 }
 
 /*

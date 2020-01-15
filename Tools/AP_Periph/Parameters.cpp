@@ -57,6 +57,7 @@ const AP_Param::Info AP_Periph_FW::var_info[] = {
     // @Group: BARO_
     // @Path: ../../libraries/AP_Baro/AP_Baro.cpp
     GOBJECT(baro, "BARO_", AP_Baro),
+    GSCALAR(baro_enable, "BARO_ENABLE", 1),
 #endif
 
 #ifdef AP_PERIPH_HAVE_LED
@@ -83,6 +84,11 @@ const AP_Param::Info AP_Periph_FW::var_info[] = {
 
 #ifdef HAL_PERIPH_ENABLE_ADSB
     GSCALAR(adsb_baudrate, "ADSB_BAUDRATE", 57600),
+#endif
+
+#ifdef HAL_PERIPH_ENABLE_PWM_HARDPOINT
+    GSCALAR(hardpoint_id, "HARDPOINT_ID", HAL_PWM_HARDPOINT_ID_DEFAULT),
+    GSCALAR(hardpoint_rate, "HARDPOINT_RATE", 100),
 #endif
     
     AP_VAREND

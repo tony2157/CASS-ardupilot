@@ -109,7 +109,7 @@ void Tracker::one_second_loop()
 
     // need to set "likely flying" when armed to allow for compass
     // learning to run
-    ahrs.set_likely_flying(hal.util->get_soft_armed());
+    set_likely_flying(hal.util->get_soft_armed());
 
     AP_Notify::flags.flying = hal.util->get_soft_armed();
 }
@@ -176,5 +176,6 @@ Tracker::Tracker(void)
 }
 
 Tracker tracker;
+AP_Vehicle& vehicle = tracker;
 
 AP_HAL_MAIN_CALLBACKS(&tracker);
