@@ -217,10 +217,9 @@ void Copter::userhook_SuperSlowLoop()
             float aux; //Total area exposed to wind and aux variable
 
             //Current Attitude of the UAS
-            copter.EKF2.getEulerAngles(-1,e_angles);
-            _roll = e_angles.x;
-            _pitch = e_angles.y;
-            _yaw = e_angles.z;
+            _roll = copter.ahrs_view->roll;
+            _pitch = copter.ahrs_view->pitch;
+            _yaw = copter.ahrs_view->yaw;
 
             //Estimated horizontal velocity calculated by the EKF2
             //copter.EKF2.getVelNED(-1,vel_xyz);
