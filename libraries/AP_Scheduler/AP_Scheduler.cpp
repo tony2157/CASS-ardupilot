@@ -73,14 +73,6 @@ AP_Scheduler::AP_Scheduler(scheduler_fastloop_fn_t fastloop_fn) :
     _singleton = this;
 
     AP_Param::setup_object_defaults(this, var_info);
-
-    // only allow 50 to 2000 Hz
-    if (_loop_rate_hz < 50) {
-        _loop_rate_hz.set(50);
-    } else if (_loop_rate_hz > 2000) {
-        _loop_rate_hz.set(2000);
-    }
-    _last_loop_time_s = 1.0 / _loop_rate_hz;
 }
 
 /*
@@ -95,6 +87,17 @@ AP_Scheduler *AP_Scheduler::get_singleton()
 // initialise the scheduler
 void AP_Scheduler::init(const AP_Scheduler::Task *tasks, uint8_t num_tasks, uint32_t log_performance_bit)
 {
+    // grab the semaphore before we start anything
+    _rsem.take_blocking();
+
+    // only allow 50 to 2000 Hz
+    if (_loop_rate_hz < 50) {
+        _loop_rate_hz.set(50);
+    } else if (_loop_rate_hz > 2000) {
+        _loop_rate_hz.set(2000);
+    }
+    _last_loop_time_s = 1.0 / _loop_rate_hz;
+
     AP_Vehicle* vehicle = AP::vehicle();
     if (vehicle != nullptr) {
         vehicle->get_common_scheduler_tasks(_common_tasks, _num_tasks);
@@ -157,7 +160,8 @@ void AP_Scheduler::run(uint32_t time_available)
         const AP_Scheduler::Task& task = (i < _num_unshared_tasks) ? _tasks[i] : _common_tasks[i - _num_unshared_tasks];
 
         uint32_t dt = _tick_counter - _last_run[i];
-        uint32_t interval_ticks = _loop_rate_hz / task.rate_hz;
+        // we allow 0 to mean loop rate
+        uint32_t interval_ticks = (is_zero(task.rate_hz) ? 1 : _loop_rate_hz / task.rate_hz);
         if (interval_ticks < 1) {
             interval_ticks = 1;
         }
@@ -267,7 +271,9 @@ void AP_Scheduler::loop()
 {
     // wait for an INS sample
     hal.util->persistent_data.scheduler_task = -3;
+    _rsem.give();
     AP::ins().wait_for_sample();
+    _rsem.take_blocking();
     hal.util->persistent_data.scheduler_task = -1;
 
     const uint32_t sample_time_us = AP_HAL::micros();

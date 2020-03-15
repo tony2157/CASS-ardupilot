@@ -86,7 +86,8 @@ bool AP_Arming_Rover::pre_arm_checks(bool report)
             & rover.g2.motors.pre_arm_check(report)
             & fence_checks(report)
             & oa_check(report)
-            & parameter_checks(report));
+            & parameter_checks(report)
+            & mode_checks(report));
 }
 
 bool AP_Arming_Rover::arm_checks(AP_Arming::Method method)
@@ -134,9 +135,9 @@ bool AP_Arming_Rover::arm(AP_Arming::Method method, const bool do_arming_checks)
 /*
   disarm motors
  */
-bool AP_Arming_Rover::disarm(void)
+bool AP_Arming_Rover::disarm(const AP_Arming::Method method)
 {
-    if (!AP_Arming::disarm()) {
+    if (!AP_Arming::disarm(method)) {
         return false;
     }
     if (rover.control_mode != &rover.mode_auto) {
@@ -185,3 +186,13 @@ bool AP_Arming_Rover::parameter_checks(bool report)
     return true;
 }
 
+// check if arming allowed from this mode
+bool AP_Arming_Rover::mode_checks(bool report)
+{   
+    //display failure if arming in this mode is not allowed
+    if (!rover.control_mode->allows_arming()) {
+        check_failed(report, "Mode not armable");
+        return false;
+    }
+    return true;
+}

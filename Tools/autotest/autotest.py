@@ -100,23 +100,15 @@ def build_all():
 def build_binaries():
     """Run the build_binaries.py script."""
     print("Running build_binaries.py")
-    # copy the script as it changes git branch, which can change the
-    # script while running
-    orig = util.reltopdir('Tools/scripts/build_binaries.py')
-    copy = util.reltopdir('./build_binaries.py')
-    shutil.copy2(orig, copy)
 
-    # also copy generate_manifest library:
-    orig_gm = util.reltopdir('Tools/scripts/generate_manifest.py')
-    copy_gm = util.reltopdir('./generate_manifest.py')
-    shutil.copy2(orig_gm, copy_gm)
-
-    # and gen_stable.py
-    orig_gs = util.reltopdir('Tools/scripts/gen_stable.py')
-    copy_gs = util.reltopdir('./gen_stable.py')
-    shutil.copy2(orig_gs, copy_gs)
+    # copy the script (and various libraries used by the script) as it
+    # changes git branch, which can change the script while running
+    for thing in "build_binaries.py", "generate_manifest.py", "gen_stable.py", "build_binaries_history.py":
+        orig = util.reltopdir('Tools/scripts/%s' % thing)
+        copy = util.reltopdir('./%s' % thing)
+        shutil.copy2(orig, copy)
     
-    if util.run_cmd(copy, directory=util.reltopdir('.')) != 0:
+    if util.run_cmd("./build_binaries.py", directory=util.reltopdir('.')) != 0:
         print("Failed build_binaries.py")
         return False
     return True
@@ -251,6 +243,8 @@ def should_run_step(step):
 
 __bin_names = {
     "ArduCopter": "arducopter",
+    "ArduCopterTests1": "arducopter",
+    "ArduCopterTests2": "arducopter",
     "ArduPlane": "arduplane",
     "APMrover2": "ardurover",
     "AntennaTracker": "antennatracker",
@@ -302,6 +296,8 @@ def find_specific_test_to_run(step):
 
 tester_class_map = {
     "fly.ArduCopter": arducopter.AutoTestCopter,
+    "fly.ArduCopterTests1": arducopter.AutoTestCopterTests1,
+    "fly.ArduCopterTests2": arducopter.AutoTestCopterTests2,
     "fly.ArduPlane": arduplane.AutoTestPlane,
     "fly.QuadPlane": quadplane.AutoTestQuadPlane,
     "drive.APMrover2": apmrover2.AutoTestRover,
@@ -682,6 +678,10 @@ if __name__ == "__main__":
                       action="store_true",
                       default=False,
                       help="show how long each test took to run")
+    parser.add_option("--validate-parameters",
+                      action="store_true",
+                      default=False,
+                      help="validate vehicle parameter files")
 
     group_build = optparse.OptionGroup(parser, "Build options")
     group_build.add_option("--no-configure",
@@ -780,6 +780,11 @@ if __name__ == "__main__":
         'convertgpx',
     ]
 
+    moresteps = [
+        'fly.ArduCopterTests1',
+        'fly.ArduCopterTests2',
+    ]
+
     skipsteps = opts.skip.split(',')
 
     # ensure we catch timeouts
@@ -812,6 +817,9 @@ if __name__ == "__main__":
             x = find_specific_test_to_run(a)
             if x is not None:
                 matches.append(x)
+
+            if a in moresteps:
+                matches.append(a)
 
             if not len(matches):
                 print("No steps matched {}".format(a))

@@ -161,6 +161,7 @@ const AP_Scheduler::Task Copter::scheduler_tasks[] = {
     SCHED_TASK_CLASS(AP_Logger,      &copter.logger,           periodic_tasks, 400, 300),
 #endif
     SCHED_TASK_CLASS(AP_InertialSensor,    &copter.ins,                 periodic,       400,  50),
+
     SCHED_TASK_CLASS(AP_Scheduler,         &copter.scheduler,           update_logging, 0.1,  75),
 #if RPM_ENABLED == ENABLED
     SCHED_TASK(rpm_update,            40,    200),
@@ -209,28 +210,16 @@ const AP_Scheduler::Task Copter::scheduler_tasks[] = {
 #endif
 };
 
+void Copter::get_scheduler_tasks(const AP_Scheduler::Task *&tasks,
+                                 uint8_t &task_count,
+                                 uint32_t &log_bit)
+{
+    tasks = &scheduler_tasks[0];
+    task_count = ARRAY_SIZE(scheduler_tasks);
+    log_bit = MASK_LOG_PM;
+}
+
 constexpr int8_t Copter::_failsafe_priorities[7];
-
-void Copter::setup()
-{
-    // Load the default values of variables listed in var_info[]s
-    AP_Param::setup_sketch_defaults();
-
-    // setup storage layout for copter
-    StorageManager::set_layout_copter();
-
-    init_ardupilot();
-
-    // initialise the main loop scheduler
-    scheduler.init(&scheduler_tasks[0], ARRAY_SIZE(scheduler_tasks), MASK_LOG_PM);
-}
-
-void Copter::loop()
-{
-    scheduler.loop();
-    G_Dt = scheduler.get_last_loop_time_s();
-}
-
 
 // Main loop - 400hz
 void Copter::fast_loop()
@@ -282,6 +271,17 @@ void Copter::fast_loop()
     }
 }
 
+// set target location (for use by scripting)
+bool Copter::set_target_location(const Location& target_loc)
+{
+    // exit if vehicle is not in Guided mode or Auto-Guided mode
+    if (!flightmode->in_guided_mode()) {
+        return false;
+    }
+
+    return mode_guided.set_destination(target_loc);
+}
+
 // rc_loops - reads user input from transmitter/receiver
 // called at 100hz
 void Copter::rc_loop()
@@ -297,7 +297,7 @@ void Copter::rc_loop()
 void Copter::throttle_loop()
 {
     // update throttle_low_comp value (controls priority of throttle vs attitude control)
-    update_throttle_thr_mix();
+    update_throttle_mix();
 
     // check auto_armed status
     update_auto_armed();
@@ -587,6 +587,9 @@ void Copter::update_altitude()
 
     if (should_log(MASK_LOG_CTUN)) {
         Log_Write_Control_Tuning();
+#if HAL_GYROFFT_ENABLED
+        gyro_fft.write_log_messages();
+#endif
     }
 }
 

@@ -111,7 +111,6 @@ AP_Logger::AP_Logger(const AP_Int32 &log_bitmask)
 
 void AP_Logger::Init(const struct LogStructure *structures, uint8_t num_types)
 {
-    gcs().send_text(MAV_SEVERITY_INFO, "Preparing log system");
     if (hal.util->was_watchdog_armed()) {
         gcs().send_text(MAV_SEVERITY_INFO, "Forcing logging for watchdog reset");
         _params.log_disarmed.set(1);
@@ -138,6 +137,8 @@ void AP_Logger::Init(const struct LogStructure *structures, uint8_t num_types)
         }
         if (backends[_next_backend] == nullptr) {
             hal.console->printf("Unable to open AP_Logger_File");
+            // note that message_writer is leaked here; costs several
+            // hundred bytes to fix for marginal utility
         } else {
             _next_backend++;
         }
@@ -157,6 +158,8 @@ void AP_Logger::Init(const struct LogStructure *structures, uint8_t num_types)
         }
         if (backends[_next_backend] == nullptr) {
             hal.console->printf("Unable to open AP_Logger_DataFlash");
+            // note that message_writer is leaked here; costs several
+            // hundred bytes to fix for marginal utility
         } else {
             _next_backend++;
         }
@@ -176,6 +179,8 @@ void AP_Logger::Init(const struct LogStructure *structures, uint8_t num_types)
         }
         if (backends[_next_backend] == nullptr) {
             hal.console->printf("Unable to open AP_Logger_SITL");
+            // note that message_writer is leaked here; costs several
+            // hundred bytes to fix for marginal utility
         } else {
             _next_backend++;
         }
@@ -196,6 +201,8 @@ void AP_Logger::Init(const struct LogStructure *structures, uint8_t num_types)
         }
         if (backends[_next_backend] == nullptr) {
             hal.console->printf("Unable to open AP_Logger_MAVLink");
+            // note that message_writer is leaked here; costs several
+            // hundred bytes to fix for marginal utility
         } else {
             _next_backend++;
         }
@@ -209,8 +216,6 @@ void AP_Logger::Init(const struct LogStructure *structures, uint8_t num_types)
     Prep();
 
     EnableWrites(true);
-
-    gcs().send_text(MAV_SEVERITY_INFO, "Prepared log system");
 }
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
@@ -855,6 +860,8 @@ void AP_Logger::assert_same_fmt_for_name(const AP_Logger::log_write_fmt *f,
 
 AP_Logger::log_write_fmt *AP_Logger::msg_fmt_for_name(const char *name, const char *labels, const char *units, const char *mults, const char *fmt)
 {
+    WITH_SEMAPHORE(log_write_fmts_sem);
+
     struct log_write_fmt *f;
     for (f = log_write_fmts; f; f=f->next) {
         if (f->name == name) { // ptr comparison

@@ -114,6 +114,7 @@ bool AP_Mission::start_command_camera(const AP_Mission::Mission_Command& cmd)
 
 bool AP_Mission::start_command_parachute(const AP_Mission::Mission_Command& cmd)
 {
+#if HAL_PARACHUTE_ENABLED
     AP_Parachute *parachute = AP::parachute();
     if (parachute == nullptr) {
         return false;
@@ -134,5 +135,15 @@ bool AP_Mission::start_command_parachute(const AP_Mission::Mission_Command& cmd)
         return false;
     }
 
+    return true;
+#else
+    return false;
+#endif // HAL_PARACHUTE_ENABLED
+}
+
+bool AP_Mission::command_do_set_repeat_dist(const AP_Mission::Mission_Command& cmd)
+{
+    _repeat_dist = cmd.p1;
+    gcs().send_text(MAV_SEVERITY_INFO, "Resume repeat dist set to %u m",_repeat_dist);
     return true;
 }

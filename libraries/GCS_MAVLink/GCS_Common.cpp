@@ -41,6 +41,7 @@
 #include <AP_Baro/AP_Baro.h>
 #include <AP_EFI/AP_EFI.h>
 #include <AP_Proximity/AP_Proximity.h>
+#include <AP_Scripting/AP_Scripting.h>
 
 #include <stdio.h>
 
@@ -217,7 +218,7 @@ void GCS_MAVLINK::send_battery_status(const uint8_t instance) const
 
     float current, consumed_mah, consumed_wh;
     if (battery.current_amps(current, instance)) {
-         current *= 100;
+         current = constrain_float(current * 100,-INT16_MAX,INT16_MAX);
     } else {
         current = -1;
     }
@@ -410,7 +411,8 @@ void GCS_MAVLINK::send_ahrs2()
 
 void GCS_MAVLINK::send_ahrs3()
 {
-#if AP_AHRS_NAVEKF_AVAILABLE
+#if AP_AHRS_NAVEKF_AVAILABLE && HAL_NAVEKF2_AVAILABLE
+
     const NavEKF2 &ekf2 = AP::ahrs_navekf().get_NavEKF2_const();
     if (ekf2.activeCores() > 0 &&
         HAVE_PAYLOAD_SPACE(chan, AHRS3)) {
@@ -1480,13 +1482,39 @@ void GCS_MAVLINK::log_mavlink_stats()
         return;
     }
 
+    enum class Flags {
+        USING_SIGNING = (1<<0),
+        ACTIVE = (1<<1),
+        STREAMING = (1<<2),
+        PRIVATE = (1<<3),
+        LOCKED = (1<<4),
+    };
+
+    uint8_t flags = 0;
+    if (signing_enabled()) {
+        flags |= (uint8_t)Flags::USING_SIGNING;
+    }
+    if (is_streaming()) {
+        flags |= (uint8_t)Flags::STREAMING;
+    }
+    if (is_active()) {
+        flags |= (uint8_t)Flags::ACTIVE;
+    }
+    if (is_private()) {
+        flags |= (uint8_t)Flags::PRIVATE;
+    }
+    if (locked()) {
+        flags |= (uint8_t)Flags::LOCKED;
+    }
+
     const struct log_MAV pkt = {
     LOG_PACKET_HEADER_INIT(LOG_MAV_MSG),
     time_us                : AP_HAL::micros64(),
     chan                   : (uint8_t)chan,
     packet_tx_count        : send_packet_count,
     packet_rx_success_count: status->packet_rx_success_count,
-    packet_rx_drop_count   : status->packet_rx_drop_count
+    packet_rx_drop_count   : status->packet_rx_drop_count,
+    flags                  : flags,
     };
 
     AP::logger().WriteBlock(&pkt, sizeof(pkt));
@@ -1762,56 +1790,92 @@ void GCS_MAVLINK::send_ahrs()
 */
 void GCS::send_textv(MAV_SEVERITY severity, const char *fmt, va_list arg_list, uint8_t dest_bitmask)
 {
-    char text[MAVLINK_MSG_STATUSTEXT_FIELD_TEXT_LEN+1];
-    if (hal.util->vsnprintf(text, sizeof(text), fmt, arg_list) > MAVLINK_MSG_STATUSTEXT_FIELD_TEXT_LEN+1) {
-#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
-        AP_HAL::panic("Statustext (%s) too long", text);
-#endif
-    }
+    char first_piece_of_text[MAVLINK_MSG_STATUSTEXT_FIELD_TEXT_LEN+1]{};
 
+    do {
+        WITH_SEMAPHORE(_statustext_sem);
+        // send_text can be called from multiple threads; we must
+        // protect the "text" member with _statustext_sem
+        hal.util->vsnprintf(statustext_printf_buffer, sizeof(statustext_printf_buffer), fmt, arg_list);
+        memcpy(first_piece_of_text, statustext_printf_buffer, ARRAY_SIZE(first_piece_of_text));
+
+        // filter destination ports to only allow active ports.
+        statustext_t statustext{};
+        if (update_send_has_been_called) {
+            statustext.bitmask = (GCS_MAVLINK::active_channel_mask()  | GCS_MAVLINK::streaming_channel_mask() );
+        } else {
+            // we have not yet initialised the streaming-channel-mask,
+            // which is done as part of the update() call.  So just send
+            // it to all channels:
+            statustext.bitmask = (1<<_num_gcs)-1;
+        }
+        statustext.bitmask &= dest_bitmask;
+        if (!statustext.bitmask) {
+            // nowhere to send
+            break;
+        }
+
+        statustext.msg.severity = severity;
+
+        static uint16_t msgid;
+        if (strlen(statustext_printf_buffer) > sizeof(statustext.msg.text)) {
+            msgid++;
+            if (msgid == 0) {
+                msgid = 1;
+            }
+            statustext.msg.id = msgid;
+        }
+
+        const char *remainder = statustext_printf_buffer;
+        for (uint8_t i=0; i<_status_capacity; i++) {
+            statustext.msg.chunk_seq = i;
+            const size_t remainder_len = strlen(remainder);
+            // note that remainder_len may be zero here!
+            uint16_t n = MIN(sizeof(statustext.msg.text), remainder_len);
+            if (i == _status_capacity -1 && n == sizeof(statustext.msg.text)) {
+                // fantastic.  This us a very long statustext and
+                // we've actually managed to push everything else out
+                // of the queue - this is the last chunk, so we MUST
+                // null-terminate.
+                n -= 1;
+            }
+            memset(statustext.msg.text, '\0', sizeof(statustext.msg.text));
+            memcpy(statustext.msg.text, remainder, n);
+            // The force push will ensure comm links do not block other comm links forever if they fail.
+            // If we push to a full buffer then we overwrite the oldest entry, effectively removing the
+            // block but not until the buffer fills up.
+            _statustext_queue.push_force(statustext);
+            remainder = &remainder[n];
+
+            // note that remainder_len here is the remainder length for
+            // the *old* remainder!
+            if (remainder_len < sizeof(statustext.msg.text) || statustext.msg.id == 0) {
+                break;
+            }
+        }
+
+        // try and send immediately if possible
+        if (hal.scheduler->in_main_thread()) {
+            service_statustext();
+        }
+    } while (false);
+
+    // given we don't really know what these methods get up to, we
+    // don't hold the statustext semaphore while doing them:
     AP_Logger *logger = AP_Logger::get_singleton();
     if (logger != nullptr) {
-        logger->Write_Message(text);
+        logger->Write_Message(first_piece_of_text);
     }
 
     frsky = AP::frsky_telem();
     if (frsky != nullptr) {
-        frsky->queue_message(severity, text);
+        frsky->queue_message(severity, first_piece_of_text);
     }
 
     AP_Notify *notify = AP_Notify::get_singleton();
     if (notify) {
-        notify->send_text(text);
+        notify->send_text(first_piece_of_text);
     }
-
-    // filter destination ports to only allow active ports.
-    statustext_t statustext{};
-    if (update_send_has_been_called) {
-        statustext.bitmask = (GCS_MAVLINK::active_channel_mask()  | GCS_MAVLINK::streaming_channel_mask() );
-    } else {
-        // we have not yet initialised the streaming-channel-mask,
-        // which is done as part of the update() call.  So just send
-        // it to all channels:
-        statustext.bitmask = (1<<_num_gcs)-1;
-    }
-    statustext.bitmask &= dest_bitmask;
-    if (!statustext.bitmask) {
-        // nowhere to send
-        return;
-    }
-
-    statustext.msg.severity = severity;
-    strncpy(statustext.msg.text, text, sizeof(statustext.msg.text));
-
-    WITH_SEMAPHORE(_statustext_sem);
-    
-    // The force push will ensure comm links do not block other comm links forever if they fail.
-    // If we push to a full buffer then we overwrite the oldest entry, effectively removing the
-    // block but not until the buffer fills up.
-    _statustext_queue.push_force(statustext);
-
-    // try and send immediately if possible
-    service_statustext();
 }
 
 /*
@@ -1847,7 +1911,7 @@ void GCS::service_statustext(void)
                 mavlink_channel_t chan_index = (mavlink_channel_t)(MAVLINK_COMM_0+i);
                 if (HAVE_PAYLOAD_SPACE(chan_index, STATUSTEXT)) {
                     // we have space so send then clear that channel bit on the mask
-                    mavlink_msg_statustext_send(chan_index, statustext->msg.severity, statustext->msg.text);
+                    mavlink_msg_statustext_send(chan_index, statustext->msg.severity, statustext->msg.text, statustext->msg.id, statustext->msg.chunk_seq);
                     statustext->bitmask &= ~chan_bit;
                 }
             }
@@ -1897,8 +1961,18 @@ void GCS::update_send()
     if (_missionitemprotocol_fence != nullptr) {
         _missionitemprotocol_fence->update();
     }
-    for (uint8_t i=0; i<num_gcs(); i++) {
+    // round-robin the GCS_MAVLINK backend that gets to go first so
+    // one backend doesn't monopolise all of the time allowed for sending
+    // messages
+    for (uint8_t i=first_backend_to_send; i<num_gcs(); i++) {
         chan(i)->update_send();
+    }
+    for (uint8_t i=0; i<first_backend_to_send; i++) {
+        chan(i)->update_send();
+    }
+    first_backend_to_send++;
+    if (first_backend_to_send >= num_gcs()) {
+        first_backend_to_send = 0;
     }
     WITH_SEMAPHORE(_statustext_sem);
     service_statustext();
@@ -1996,7 +2070,7 @@ void GCS_MAVLINK::send_battery2()
     if (battery.num_instances() > 1) {
         float current;
         if (battery.current_amps(current, 1)) {
-            current *= 100; // 10*mA
+            current = constrain_float(current * 100,-INT16_MAX,INT16_MAX); // 10*mA
         } else {
             current = -1;
         }
@@ -2117,18 +2191,15 @@ void GCS_MAVLINK::send_autopilot_version() const
                         (uint32_t)(version.fw_type) << (8 * 0);
 
     if (version.fw_hash_str) {
-        strncpy(flight_custom_version, version.fw_hash_str, sizeof(flight_custom_version) - 1);
-        flight_custom_version[sizeof(flight_custom_version) - 1] = '\0';
+        strncpy(flight_custom_version, version.fw_hash_str, ARRAY_SIZE(flight_custom_version));
     }
 
     if (version.middleware_hash_str) {
-        strncpy(middleware_custom_version, version.middleware_hash_str, sizeof(middleware_custom_version) - 1);
-        middleware_custom_version[sizeof(middleware_custom_version) - 1] = '\0';
+        strncpy(middleware_custom_version, version.middleware_hash_str, ARRAY_SIZE(middleware_custom_version));
     }
 
     if (version.os_hash_str) {
-        strncpy(os_custom_version, version.os_hash_str, sizeof(os_custom_version) - 1);
-        os_custom_version[sizeof(os_custom_version) - 1] = '\0';
+        strncpy(os_custom_version, version.os_hash_str, ARRAY_SIZE(os_custom_version));
     }
 
     mavlink_msg_autopilot_version_send(
@@ -3113,12 +3184,13 @@ void GCS_MAVLINK::handle_common_message(const mavlink_message_t &msg)
         break;
 
     case MAVLINK_MSG_ID_DIGICAM_CONTROL:
+    case MAVLINK_MSG_ID_GOPRO_HEARTBEAT: // heartbeat from a GoPro in Solo gimbal
         {
             AP_Camera *camera = AP::camera();
             if (camera == nullptr) {
                 return;
             }
-            camera->control_msg(msg);
+            camera->handle_message(chan, msg);
         }
         break;
 
@@ -3337,6 +3409,12 @@ void GCS_MAVLINK::send_banner()
     if (hal.util->get_system_id(sysid)) {
         send_text(MAV_SEVERITY_INFO, "%s", sysid);
     }
+
+    // send RC output mode info if available
+    char banner_msg[50];
+    if (hal.rcout->get_output_mode_banner(banner_msg, sizeof(banner_msg))) {
+        send_text(MAV_SEVERITY_INFO, "%s", banner_msg);
+    }
 }
 
 
@@ -3358,11 +3436,16 @@ MAV_RESULT GCS_MAVLINK::handle_command_flash_bootloader(const mavlink_command_lo
         return MAV_RESULT_FAILED;
     }
 
-    if (hal.util->flash_bootloader() != AP_HAL::Util::FlashBootloader::OK) {
-        return MAV_RESULT_FAILED;
+    switch (hal.util->flash_bootloader()) {
+    case AP_HAL::Util::FlashBootloader::OK:
+    case AP_HAL::Util::FlashBootloader::NO_CHANGE:
+        // consider NO_CHANGE as success (so as not to display error to user)
+        return MAV_RESULT_ACCEPTED;
+    default:
+        break;
     }
 
-    return MAV_RESULT_ACCEPTED;
+    return MAV_RESULT_FAILED;
 }
 
 MAV_RESULT GCS_MAVLINK::handle_command_preflight_set_sensor_offsets(const mavlink_command_long_t &packet)
@@ -3459,6 +3542,7 @@ MAV_RESULT GCS_MAVLINK::handle_command_preflight_calibration(const mavlink_comma
 {
     if (hal.util->get_soft_armed()) {
         // *preflight*, remember?
+        gcs().send_text(MAV_SEVERITY_NOTICE, "Disarm to allow calibration");
         return MAV_RESULT_FAILED;
     }
     // now call subclass methods:
@@ -3571,6 +3655,18 @@ MAV_RESULT GCS_MAVLINK::handle_command_get_home_position(const mavlink_command_l
     }
 
     return MAV_RESULT_ACCEPTED;
+}
+
+MAV_RESULT GCS_MAVLINK::handle_command_debug_trap(const mavlink_command_long_t &packet)
+{
+    // magic number must be supplied to trap; you must *really* mean it.
+    if (uint32_t(packet.param1) != 32451) {
+        return MAV_RESULT_DENIED;
+    }
+    if (hal.util->trap()) {
+        return MAV_RESULT_ACCEPTED;
+    }
+    return MAV_RESULT_UNSUPPORTED;
 }
 
 MAV_RESULT GCS_MAVLINK::handle_command_do_gripper(const mavlink_command_long_t &packet)
@@ -3740,6 +3836,10 @@ MAV_RESULT GCS_MAVLINK::handle_command_long_packet(const mavlink_command_long_t 
         result = handle_command_get_home_position(packet);
         break;
 
+    case MAV_CMD_DEBUG_TRAP:
+        result = handle_command_debug_trap(packet);
+        break;
+
     case MAV_CMD_PREFLIGHT_STORAGE:
         if (is_equal(packet.param1, 2.0f)) {
             AP_Param::erase_all();
@@ -3791,7 +3891,7 @@ MAV_RESULT GCS_MAVLINK::handle_command_long_packet(const mavlink_command_long_t 
                 !is_equal(packet.param2, magic_force_disarm_value)) {
                 return MAV_RESULT_FAILED;
             }
-            if (AP::arming().disarm()) {
+            if (AP::arming().disarm(AP_Arming::Method::MAVLINK)) {
                 return MAV_RESULT_ACCEPTED;
             }
             return MAV_RESULT_FAILED;
@@ -3998,6 +4098,16 @@ MAV_RESULT GCS_MAVLINK::handle_command_int_packet(const mavlink_command_int_t &p
         return handle_command_do_set_roi_sysid(packet);
     case MAV_CMD_DO_SET_HOME:
         return handle_command_int_do_set_home(packet);
+#ifdef ENABLE_SCRIPTING
+    case MAV_CMD_SCRIPTING:
+        {
+            AP_Scripting *scripting = AP_Scripting::get_singleton();
+            if (scripting == nullptr) {
+                return MAV_RESULT_UNSUPPORTED;
+            }
+            return scripting->handle_command_int_packet(packet);
+        }
+#endif // ENABLE_SCRIPTING
     default:
         break;
     }
@@ -4090,10 +4200,15 @@ void GCS_MAVLINK::send_rpm() const
         return;
     }
 
+    float rpm1 = -1, rpm2 = -1;
+
+    rpm->get_rpm(0, rpm1);
+    rpm->get_rpm(1, rpm2);
+
     mavlink_msg_rpm_send(
         chan,
-        rpm->get_rpm(0),
-        rpm->get_rpm(1));
+        rpm1,
+        rpm2);
 }
 
 void GCS_MAVLINK::send_sys_status()
@@ -4110,7 +4225,7 @@ void GCS_MAVLINK::send_sys_status()
 
     if (battery.healthy() && battery.current_amps(battery_current)) {
         battery_remaining = battery.capacity_remaining_pct();
-        battery_current *= 100;
+        battery_current = constrain_float(battery_current * 100,-INT16_MAX,INT16_MAX);
     } else {
         battery_current = -1;
         battery_remaining = -1;

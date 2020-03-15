@@ -7,7 +7,7 @@
 #include <AP_Math/AP_Math.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
 #include <AP_Common/Location.h>
-
+#include <AP_Compass/AP_Compass.h>
 #include "SIM_Buzzer.h"
 #include "SIM_Gripper_EPM.h"
 #include "SIM_Gripper_Servo.h"
@@ -19,6 +19,11 @@
 
 namespace SITL {
 
+enum class LedLayout {
+    ROWS=0,
+    LUMINOUSBEE=1,
+};
+    
 struct vector3f_array {
     uint16_t length;
     Vector3f *data;
@@ -71,6 +76,7 @@ public:
         mag_ofs.set(Vector3f(5, 13, -18));
         AP_Param::setup_object_defaults(this, var_info);
         AP_Param::setup_object_defaults(this, var_info2);
+        AP_Param::setup_object_defaults(this, var_info3);
         if (_singleton != nullptr) {
             AP_HAL::panic("Too many SITL instances");
         }
@@ -116,6 +122,7 @@ public:
     
     static const struct AP_Param::GroupInfo var_info[];
     static const struct AP_Param::GroupInfo var_info2[];
+    static const struct AP_Param::GroupInfo var_info3[];
 
     // noise levels for simulated sensors
     AP_Float baro_noise;  // in metres
@@ -159,12 +166,10 @@ public:
     AP_Int8  gps_disable; // disable simulated GPS
     AP_Int8  gps2_enable; // enable 2nd simulated GPS
     AP_Int8  gps_delay;   // delay in samples
-    AP_Int8  gps_type;    // see enum GPSType
-    AP_Int8  gps2_type;   // see enum GPSType
+    AP_Int8  gps_type[2]; // see enum GPSType
     AP_Float gps_byteloss;// byte loss as a percent
     AP_Int8  gps_numsats; // number of visible satellites
-    AP_Vector3f gps_glitch;  // glitch offsets in lat, lon and altitude
-    AP_Vector3f gps2_glitch; // glitch offsets in lat, lon and altitude for 2nd GPS
+    AP_Vector3f gps_glitch[2];  // glitch offsets in lat, lon and altitude
     AP_Int8  gps_hertz;   // GPS update rate in Hz
     AP_Float batt_voltage; // battery voltage base
     AP_Float accel_fail;  // accelerometer failure value
@@ -185,6 +190,7 @@ public:
     AP_Int8 gps_hdg_enabled; // enable the output of a NMEA heading HDT sentence
     AP_Int32 loop_delay; // extra delay to add to every loop
     AP_Float mag_scaling; // scaling factor on first compasses
+    AP_Int32 mag_devid[MAX_CONNECTED_MAGS]; // Mag devid
 
     // EFI type
     enum EFIType {
@@ -229,7 +235,7 @@ public:
 
     // Body frame sensor position offsets
     AP_Vector3f imu_pos_offset;     // XYZ position of the IMU accelerometer relative to the body frame origin (m)
-    AP_Vector3f gps_pos_offset;     // XYZ position of the GPS antenna phase centre relative to the body frame origin (m)
+    AP_Vector3f gps_pos_offset[2];  // XYZ position of the GPS antenna phase centre relative to the body frame origin (m)
     AP_Vector3f rngfnd_pos_offset;  // XYZ position of the range finder zero range datum relative to the body frame origin (m)
     AP_Vector3f optflow_pos_offset; // XYZ position of the optical flow sensor focal point relative to the body frame origin (m)
 
@@ -250,6 +256,8 @@ public:
 
     // max frequency to use as baseline for adding motor noise for the gyros and accels
     AP_Float vibe_motor;
+    // amplitude scaling of motor noise relative to gyro/accel noise
+    AP_Float vibe_motor_scale;
     // minimum throttle for addition of ins noise
     AP_Float ins_noise_throttle_min;
 
@@ -345,6 +353,8 @@ public:
     } led;
 
     EFI_MegaSquirt efi_ms;
+
+    AP_Int8 led_layout;
 };
 
 } // namespace SITL

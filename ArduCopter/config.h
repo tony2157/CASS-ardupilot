@@ -224,7 +224,7 @@
 //////////////////////////////////////////////////////////////////////////////
 //  Crop Sprayer - enabled only on larger firmwares
 #ifndef SPRAYER_ENABLED
- # define SPRAYER_ENABLED  !HAL_MINIMIZE_FEATURES
+ # define SPRAYER_ENABLED  HAL_SPRAYER_ENABLED
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
@@ -254,7 +254,7 @@
 //////////////////////////////////////////////////////////////////////////////
 // Parachute release
 #ifndef PARACHUTE
- # define PARACHUTE ENABLED
+ # define PARACHUTE HAL_PARACHUTE_ENABLED
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
@@ -369,6 +369,9 @@
 // ZigZag - allow vehicle to fly in a zigzag manner with predefined point A B
 #ifndef MODE_ZIGZAG_ENABLED
 # define MODE_ZIGZAG_ENABLED !HAL_MINIMIZE_FEATURES
+#endif
+#if MODE_ZIGZAG_ENABLED == ENABLED && HAL_SPRAYER_ENABLED
+# define ZIGZAG_AUTO_PUMP_ENABLED DISABLED
 #endif
 
 //////////////////////////////////////////////////////////////////////////////

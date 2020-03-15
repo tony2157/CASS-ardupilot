@@ -37,7 +37,7 @@ const AP_Param::Info Rover::var_info[] = {
     // @User: Advanced
     GSCALAR(initial_mode,        "INITIAL_MODE",     Mode::Number::MANUAL),
 
-    // @Param: SYSID_THIS_MAV
+    // @Param: SYSID_THISMAV
     // @DisplayName: MAVLink system ID of this vehicle
     // @Description: Allows setting an individual MAVLink system id for this vehicle to distinguish it from others on the same network
     // @Range: 1 255
@@ -332,13 +332,17 @@ const AP_Param::Info Rover::var_info[] = {
     GOBJECT(gps, "GPS_", AP_GPS),
 
 #if AP_AHRS_NAVEKF_AVAILABLE
+#if HAL_NAVEKF2_AVAILABLE
     // @Group: EK2_
     // @Path: ../libraries/AP_NavEKF2/AP_NavEKF2.cpp
-    GOBJECTN(EKF2, NavEKF2, "EK2_", NavEKF2),
+    GOBJECTN(ahrs.EKF2, NavEKF2, "EK2_", NavEKF2),
+#endif
 
+#if HAL_NAVEKF3_AVAILABLE
     // @Group: EK3_
     // @Path: ../libraries/AP_NavEKF3/AP_NavEKF3.cpp
-    GOBJECTN(EKF3, NavEKF3, "EK3_", NavEKF3),
+    GOBJECTN(ahrs.EKF3, NavEKF3, "EK3_", NavEKF3),
+#endif
 #endif
 
     // @Group: RPM
@@ -519,9 +523,11 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("LOIT_TYPE", 25, ParametersG2, loit_type, 0),
 
-    // @Group: SPRAYER_
+#if HAL_SPRAYER_ENABLED
+    // @Group: SPRAY_
     // @Path: ../libraries/AC_Sprayer/AC_Sprayer.cpp
     AP_SUBGROUPINFO(sprayer, "SPRAY_", 26, ParametersG2, AC_Sprayer),
+#endif
 
     // @Group: WRC
     // @Path: ../libraries/AP_WheelEncoder/AP_WheelRateControl.cpp

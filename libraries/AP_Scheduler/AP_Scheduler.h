@@ -26,6 +26,7 @@
 #include "PerfInfo.h"       // loop perf monitoring
 
 #define AP_SCHEDULER_NAME_INITIALIZER(_name) .name = #_name,
+#define LOOP_RATE 0
 
 /*
   useful macro for creating scheduler task table
@@ -144,6 +145,8 @@ public:
         return extra_loop_us;
     }
 
+    HAL_Semaphore &get_semaphore(void) { return _rsem; }
+
     static const struct AP_Param::GroupInfo var_info[];
 
     // loop performance monitoring:
@@ -223,6 +226,10 @@ private:
     // extra time available for each loop - used to dynamically adjust
     // the loop rate in case we are well over budget
     uint32_t extra_loop_us;
+
+
+    // semaphore that is held while not waiting for ins samples
+    HAL_Semaphore _rsem;
 };
 
 namespace AP {

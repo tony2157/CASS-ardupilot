@@ -38,6 +38,7 @@
 #include <uavcan/equipment/indication/LightsCommand.h>
 #include <uavcan/equipment/range_sensor/Measurement.h>
 #include <uavcan/equipment/hardpoint/Command.h>
+#include <uavcan/equipment/esc/Status.h>
 #include <ardupilot/indication/SafetyState.h>
 #include <ardupilot/indication/Button.h>
 #include <ardupilot/equipment/trafficmonitor/TrafficReport.h>
@@ -50,6 +51,7 @@
 #include <AP_HAL/I2CDevice.h>
 #include "../AP_Bootloader/app_comms.h"
 #include <AP_HAL/utility/RingBuffer.h>
+#include <AP_Common/AP_FWVersion.h>
 
 #include "i2c.h"
 #include <utility>
@@ -505,8 +507,7 @@ static void handle_RTCMStream(CanardInstance* ins, CanardRxTransfer* transfer)
 static void set_rgb_led(uint8_t red, uint8_t green, uint8_t blue)
 {
 #ifdef HAL_PERIPH_NEOPIXEL_COUNT
-    hal.rcout->set_neopixel_rgb_data(HAL_PERIPH_NEOPIXEL_CHAN, (1U<<HAL_PERIPH_NEOPIXEL_COUNT)-1,
-                                     red, green, blue);
+    hal.rcout->set_neopixel_rgb_data(HAL_PERIPH_NEOPIXEL_CHAN, -1, red, green, blue);
     hal.rcout->neopixel_send();
 #endif // HAL_PERIPH_NEOPIXEL_COUNT
 #ifdef HAL_PERIPH_ENABLE_NCP5623_LED
@@ -590,6 +591,9 @@ static void can_safety_LED_update(void)
 
 
 #ifdef HAL_GPIO_PIN_SAFE_BUTTON
+#ifndef HAL_SAFE_BUTTON_ON
+#define HAL_SAFE_BUTTON_ON 1
+#endif
 /*
   update safety button
  */
@@ -599,7 +603,7 @@ static void can_safety_button_update(void)
     static uint8_t counter;
     uint32_t now = AP_HAL::millis();
     // send at 10Hz when pressed
-    if (!palReadLine(HAL_GPIO_PIN_SAFE_BUTTON)) {
+    if (palReadLine(HAL_GPIO_PIN_SAFE_BUTTON) != HAL_SAFE_BUTTON_ON) {
         counter = 0;
         return;
     }
@@ -951,6 +955,7 @@ static void can_wait_node_id(void)
             processTx();
             processRx();
             canardCleanupStaleTransfers(&canard, AP_HAL::micros64());
+            stm32_watchdog_pat();
         }
 
         if (canardGetLocalNodeID(&canard) != CANARD_BROADCAST_NODE_ID)
@@ -1100,6 +1105,38 @@ void AP_Periph_FW::pwm_hardpoint_update()
 }
 #endif // HAL_PERIPH_ENABLE_PWM_HARDPOINT
 
+#ifdef HAL_PERIPH_ENABLE_HWESC
+void AP_Periph_FW::hwesc_telem_update()
+{
+    if (!hwesc_telem.update()) {
+        return;
+    }
+    const HWESC_Telem::HWESC &t = hwesc_telem.get_telem();
+
+    uavcan_equipment_esc_Status pkt {};
+    pkt.esc_index = g.esc_number;
+    pkt.voltage = t.voltage;
+    pkt.current = t.current;
+    pkt.temperature = t.temperature;
+    pkt.rpm = t.rpm;
+    pkt.power_rating_pct = t.phase_current;
+
+    fix_float16(pkt.voltage);
+    fix_float16(pkt.current);
+    fix_float16(pkt.temperature);
+
+    uint8_t buffer[UAVCAN_EQUIPMENT_ESC_STATUS_MAX_SIZE];
+    uint16_t total_size = uavcan_equipment_esc_Status_encode(&pkt, buffer);
+    canardBroadcast(&canard,
+                    UAVCAN_EQUIPMENT_ESC_STATUS_SIGNATURE,
+                    UAVCAN_EQUIPMENT_ESC_STATUS_ID,
+                    &transfer_id,
+                    CANARD_TRANSFER_PRIORITY_LOW,
+                    &buffer[0],
+                    total_size);
+}
+#endif // HAL_PERIPH_ENABLE_HWESC
+
 
 void AP_Periph_FW::can_update()
 {
@@ -1126,6 +1163,10 @@ void AP_Periph_FW::can_update()
 #ifdef HAL_PERIPH_ENABLE_PWM_HARDPOINT
     pwm_hardpoint_update();
 #endif
+#ifdef HAL_PERIPH_ENABLE_HWESC
+    hwesc_telem_update();
+#endif
+
     processTx();
     processRx();
 }
@@ -1136,6 +1177,9 @@ void AP_Periph_FW::can_update()
 void AP_Periph_FW::can_mag_update(void)
 {
 #ifdef HAL_PERIPH_ENABLE_MAG
+    if (!compass.enabled()) {
+        return;
+    }
     compass.read();
 #if CAN_PROBE_CONTINUOUS
     if (compass.get_count() == 0) {
@@ -1181,6 +1225,9 @@ void AP_Periph_FW::can_mag_update(void)
 void AP_Periph_FW::can_gps_update(void)
 {
 #ifdef HAL_PERIPH_ENABLE_GPS
+    if (gps.get_type(0) == AP_GPS::GPS_Type::GPS_TYPE_NONE) {
+        return;
+    }
     gps.update();
     if (last_gps_update_ms == gps.last_message_time_ms()) {
         return;
@@ -1447,6 +1494,9 @@ void AP_Periph_FW::can_baro_update(void)
 void AP_Periph_FW::can_airspeed_update(void)
 {
 #ifdef HAL_PERIPH_ENABLE_AIRSPEED
+    if (!airspeed.enabled()) {
+        return;
+    }
 #if CAN_PROBE_CONTINUOUS
     if (!airspeed.healthy()) {
         uint32_t now = AP_HAL::millis();
@@ -1508,6 +1558,10 @@ void AP_Periph_FW::can_airspeed_update(void)
 void AP_Periph_FW::can_rangefinder_update(void)
 {
 #ifdef HAL_PERIPH_ENABLE_RANGEFINDER
+    if (rangefinder.get_type(0) == RangeFinder::Type::NONE) {
+        return;
+    }
+#if CAN_PROBE_CONTINUOUS
     if (rangefinder.num_sensors() == 0) {
         uint32_t now = AP_HAL::millis();
         static uint32_t last_probe_ms;
@@ -1516,6 +1570,7 @@ void AP_Periph_FW::can_rangefinder_update(void)
             rangefinder.init(ROTATION_NONE);
         }
     }
+#endif
     uint32_t now = AP_HAL::millis();
     static uint32_t last_update_ms;
     if (now - last_update_ms < 20) {

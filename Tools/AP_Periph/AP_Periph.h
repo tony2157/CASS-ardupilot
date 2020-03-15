@@ -5,9 +5,8 @@
 #include <AP_Baro/AP_Baro.h>
 #include <AP_Airspeed/AP_Airspeed.h>
 #include <AP_RangeFinder/AP_RangeFinder.h>
-#include <AP_Common/AP_FWVersion.h>
-#include "version.h"
 #include "../AP_Bootloader/app_comms.h"
+#include "hwing_esc.h"
 
 #if defined(HAL_PERIPH_NEOPIXEL_COUNT) || defined(HAL_PERIPH_ENABLE_NCP5623_LED)
 #define AP_PERIPH_HAVE_LED
@@ -83,6 +82,11 @@ public:
     } pwm_hardpoint;
 #endif
 
+#ifdef HAL_PERIPH_ENABLE_HWESC
+    HWESC_Telem hwesc_telem;
+    void hwesc_telem_update();
+#endif
+    
     // setup the var_info table
     AP_Param param_loader{var_info};
 

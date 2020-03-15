@@ -56,7 +56,6 @@
 #include <AC_WPNav/AC_Loiter.h>
 #include <AC_WPNav/AC_Circle.h>          // circle navigation library
 #include <AP_Declination/AP_Declination.h>     // ArduPilot Mega Declination Helper Library
-#include <AP_Scheduler/AP_Scheduler.h>       // main loop scheduler
 #include <AP_RCMapper/AP_RCMapper.h>        // RC input mapping library
 #include <AP_BattMonitor/AP_BattMonitor.h>     // Battery monitor library
 #include <AP_LandingGear/AP_LandingGear.h>     // Landing Gear library
@@ -66,7 +65,8 @@
 #include <AP_SmartRTL/AP_SmartRTL.h>
 #include <AP_TempCalibration/AP_TempCalibration.h>
 #include <AC_AutoTune/AC_AutoTune.h>
-#include <AP_Common/AP_FWVersion.h>
+#include <AP_Parachute/AP_Parachute.h>
+#include <AC_Sprayer/AC_Sprayer.h>
 
 // CASS libraries declaration
 #include <AC_CASS_IMET/AC_CASS_Imet.h>
@@ -111,14 +111,8 @@
  #include <AC_WPNav/AC_WPNav_OA.h>
  #include <AC_Avoidance/AP_OAPathPlanner.h>
 #endif
-#if SPRAYER_ENABLED == ENABLED
- # include <AC_Sprayer/AC_Sprayer.h>
-#endif
 #if GRIPPER_ENABLED == ENABLED
  # include <AP_Gripper/AP_Gripper.h>
-#endif
-#if PARACHUTE == ENABLED
- # include <AP_Parachute/AP_Parachute.h>
 #endif
 #if PRECISION_LANDING == ENABLED
  # include <AC_PrecLand/AC_PrecLand.h>
@@ -243,12 +237,7 @@ public:
 
     Copter(void);
 
-    // HAL::Callbacks implementation.
-    void setup() override;
-    void loop() override;
-
 private:
-    static const AP_FWVersion fwver;
 
     // key aircraft parameters passed to multiple libraries
     AP_Vehicle::MultiCopter aparm;
@@ -256,9 +245,6 @@ private:
     // Global parameters are all contained within the 'g' class.
     Parameters g;
     ParametersG2 g2;
-
-    // main loop scheduler
-    AP_Scheduler scheduler{FUNCTOR_BIND_MEMBER(&Copter::fast_loop, void)};
 
     // used to detect MAVLink acks from GCS to stop compassmot
     uint8_t command_ack_counter;
@@ -284,12 +270,18 @@ private:
         bool enabled:1;
         bool alt_healthy:1; // true if we can trust the altitude from the rangefinder
         int16_t alt_cm;     // tilt compensated altitude (in cm) from rangefinder
+        float inertial_alt_cm; // inertial alt at time of last rangefinder sample
         uint32_t last_healthy_ms;
         LowPassFilterFloat alt_cm_filt; // altitude filter
         int16_t alt_cm_glitch_protected;    // last glitch protected altitude
         int8_t glitch_count;    // non-zero number indicates rangefinder is glitching
         uint32_t glitch_cleared_ms; // system time glitch cleared
     } rangefinder_state, rangefinder_up_state;
+
+    /*
+      return rangefinder height interpolated using inertial altitude
+     */
+    bool get_rangefinder_height_interpolated_cm(int32_t& ret);
 
     class SurfaceTracking {
     public:
@@ -387,7 +379,7 @@ private:
             uint8_t motor_interlock_switch  : 1; // 22      // true if pilot is requesting motor interlock enable
             uint8_t in_arming_delay         : 1; // 23      // true while we are armed but waiting to spin motors
             uint8_t initialised_params      : 1; // 24      // true when the all parameters have been initialised. we cannot send parameters to the GCS until this is done
-            uint8_t compass_init_location   : 1; // 25      // true when the compass's initial location has been set
+            uint8_t unused3                 : 1; // 25      // was compass_init_location; true when the compass's initial location has been set
             uint8_t unused2                 : 1; // 26      // aux switch rc_override is allowed
             uint8_t armed_with_switch       : 1; // 27      // we armed using a arming switch
         };
@@ -473,11 +465,6 @@ private:
     // 3D Location vectors
     // Current location of the vehicle (altitude is relative to home)
     Location current_loc;
-
-    // IMU variables
-    // Integration time (in seconds) for the gyros (DCM algorithm)
-    // Updated with the fast loop
-    float G_Dt;
 
     // Inertial Navigation
     AP_InertialNav_NavEKF inertial_nav;
@@ -653,8 +640,12 @@ private:
     void set_failsafe_gcs(bool b);
     void update_using_interlock();
 
-    // ArduCopter.cpp
-    void fast_loop();
+    // Copter.cpp
+    void get_scheduler_tasks(const AP_Scheduler::Task *&tasks,
+                             uint8_t &task_count,
+                             uint32_t &log_bit) override;
+    void fast_loop() override;
+    bool set_target_location(const Location& target_loc) override;
     void rc_loop();
     void throttle_loop();
     void update_batt_compass(void);
@@ -769,7 +760,7 @@ private:
     void update_land_detector();
     void set_land_complete(bool b);
     void set_land_complete_maybe(bool b);
-    void update_throttle_thr_mix();
+    void update_throttle_mix();
 
     // landing_gear.cpp
     void landinggear_update();
@@ -829,7 +820,7 @@ private:
     uint32_t home_distance();
 
     // Parameters.cpp
-    void load_parameters(void);
+    void load_parameters(void) override;
     void convert_pid_parameters(void);
     void convert_lgr_parameters(void);
     void convert_tradheli_parameters(void);
@@ -872,7 +863,7 @@ private:
     void auto_trim();
 
     // system.cpp
-    void init_ardupilot();
+    void init_ardupilot() override;
     void startup_INS_ground();
     void update_dynamic_notch();
     bool position_ok() const;
@@ -997,7 +988,6 @@ private:
     void exit_mode(Mode *&old_flightmode, Mode *&new_flightmode);
 
 public:
-    void mavlink_delay_cb();    // GCS_Mavlink.cpp
     void failsafe_check();      // failsafe.cpp
 };
 

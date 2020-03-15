@@ -126,10 +126,6 @@ public:
 
     Rover(void);
 
-    // HAL::Callbacks implementation.
-    void setup(void) override;
-    void loop(void) override;
-
 private:
 
     // must be the first AP_Param variable declared to ensure its
@@ -140,9 +136,6 @@ private:
     // all settable parameters
     Parameters g;
     ParametersG2 g2;
-
-    // main loop scheduler
-    AP_Scheduler scheduler;
 
     // mapping between input channels
     RCMapper rcmap;
@@ -235,14 +228,6 @@ private:
                            FUNCTOR_BIND_MEMBER(&Rover::handle_battery_failsafe, void, const char*, const int8_t),
                            _failsafe_priorities};
 
-    // true if the compass's initial location has been set
-    bool compass_init_location;
-
-    // IMU variables
-    // The main loop execution time.  Seconds
-    // This is the time between calls to the DCM algorithm and is the Integration time for the gyros.
-    float G_Dt;
-
     // flyforward timer
     uint32_t flyforward_start_ms;
 
@@ -291,7 +276,8 @@ private:
 
 private:
 
-    // APMrover2.cpp
+    // Rover.cpp
+    bool set_target_location(const Location& target_loc) override;
     void stats_update();
     void ahrs_update();
     void gcs_failsafe_check(void);
@@ -331,7 +317,7 @@ private:
     void failsafe_ekf_off_event(void);
 
     // failsafe.cpp
-    void failsafe_trigger(uint8_t failsafe_type, bool on);
+    void failsafe_trigger(uint8_t failsafe_type, const char* type_str, bool on);
     void handle_battery_failsafe(const char* type_str, const int8_t action);
 #if ADVANCED_FAILSAFE == ENABLED
     void afs_fs_check(void);
@@ -362,10 +348,10 @@ private:
     Mode *mode_from_mode_num(enum Mode::Number num);
 
     // Parameters.cpp
-    void load_parameters(void);
+    void load_parameters(void) override;
 
     // radio.cpp
-    void set_control_channels(void);
+    void set_control_channels(void) override;
     void init_rc_in();
     void rudder_arm_disarm_check();
     void read_radio();
@@ -384,8 +370,13 @@ private:
     // Steering.cpp
     void set_servos(void);
 
+    // Rover.cpp
+    void get_scheduler_tasks(const AP_Scheduler::Task *&tasks,
+                             uint8_t &task_count,
+                             uint32_t &log_bit) override;
+
     // system.cpp
-    void init_ardupilot();
+    void init_ardupilot() override;
     void startup_ground(void);
     void update_ahrs_flyforward();
     bool set_mode(Mode &new_mode, ModeReason reason);
@@ -429,7 +420,6 @@ private:
 
 
 public:
-    void mavlink_delay_cb();
     void failsafe_check();
     // Motor test
     void motor_test_output();

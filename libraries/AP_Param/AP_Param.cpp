@@ -38,6 +38,9 @@ extern const AP_HAL::HAL &hal;
 
 uint16_t AP_Param::sentinal_offset;
 
+// singleton instance
+AP_Param *AP_Param::_singleton;
+
 #define ENABLE_DEBUG 1
 
 #if ENABLE_DEBUG
@@ -78,7 +81,7 @@ struct AP_Param::param_override *AP_Param::param_overrides = nullptr;
 uint16_t AP_Param::num_param_overrides = 0;
 uint16_t AP_Param::num_read_only = 0;
 
-ObjectBuffer<AP_Param::param_save> AP_Param::save_queue{30};
+ObjectBuffer_TS<AP_Param::param_save> AP_Param::save_queue{30};
 bool AP_Param::registered_save_handler;
 
 // we need a dummy object for the parameter save callback
@@ -379,6 +382,14 @@ bool AP_Param::get_base(const struct Info &info, ptrdiff_t &base)
     return true;
 }
 
+namespace AP {
+
+AP_Param *param()
+{
+    return AP_Param::get_singleton();
+}
+
+}
 
 // find the info structure given a header and a group_info table
 // return the Info structure and a pointer to the variables storage
@@ -956,6 +967,23 @@ bool AP_Param::find_key_by_pointer(const void *ptr, uint16_t &key)
             continue;
         }
         if (find_key_by_pointer_group(ptr, i, ginfo, offset, key)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/*
+  Find key to top level group parameters by pointer
+*/
+bool AP_Param::find_top_level_key_by_pointer(const void *ptr, uint16_t &key)
+{
+    for (uint16_t i=0; i<_num_vars; i++) {
+        if (_var_info[i].type != AP_PARAM_GROUP) {
+            continue;
+        }
+        if (ptr == (void **)_var_info[i].ptr) {
+            key = _var_info[i].key;
             return true;
         }
     }
@@ -2386,6 +2414,39 @@ bool AP_Param::set_by_name(const char *name, float value)
     }
     // not a supported type
     return false;
+}
+
+/*
+  get a value by name
+ */
+bool AP_Param::get(const char *name, float &value)
+{
+    enum ap_var_type vtype;
+    AP_Param *vp = find(name, &vtype);
+    if (vp == nullptr) {
+        return false;
+    }
+    switch (vtype) {
+    case AP_PARAM_INT8:
+        value = ((AP_Int8 *)vp)->get();
+        break;
+    case AP_PARAM_INT16:
+        value = ((AP_Int16 *)vp)->get();
+        break;
+
+    case AP_PARAM_INT32:
+        value = ((AP_Int32 *)vp)->get();
+        break;
+
+    case AP_PARAM_FLOAT:
+        value = ((AP_Float *)vp)->get();
+        break;
+
+    default:
+        // not a supported type
+        return false;
+    }
+    return true;
 }
 
 /*

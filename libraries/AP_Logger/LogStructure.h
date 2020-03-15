@@ -368,6 +368,7 @@ struct PACKED log_MAV {
     uint16_t packet_tx_count;
     uint16_t packet_rx_success_count;
     uint16_t packet_rx_drop_count;
+    uint8_t flags;
 };
 
 struct PACKED log_RSSI {
@@ -570,7 +571,7 @@ struct PACKED log_NKF4 {
     int8_t  offsetEast;
     uint16_t faults;
     uint8_t timeouts;
-    uint16_t solution;
+    uint32_t solution;
     uint16_t gps;
     int8_t primary;
 };
@@ -1235,7 +1236,7 @@ struct PACKED log_Arm_Disarm {
     LOG_PACKET_HEADER;
     uint64_t time_us;
     uint8_t  arm_state;
-    uint16_t arm_checks;
+    uint32_t arm_checks;
     uint8_t forced;
     uint8_t method;
 };
@@ -1409,7 +1410,7 @@ struct PACKED log_Arm_Disarm {
     { LOG_NKF3_MSG, sizeof(log_NKF3), \
       "NKF3","QBcccccchhhcc","TimeUS,C,IVN,IVE,IVD,IPN,IPE,IPD,IMX,IMY,IMZ,IYAW,IVT", "s#nnnmmmGGG??", "F-BBBBBBCCCBB" }, \
     { LOG_NKF4_MSG, sizeof(log_NKF4), \
-      "NKF4","QBcccccfbbHBHHb","TimeUS,C,SV,SP,SH,SM,SVT,errRP,OFN,OFE,FS,TS,SS,GPS,PI", "s#------??-----", "F-------??-----" }, \
+      "NKF4","QBcccccfbbHBIHb","TimeUS,C,SV,SP,SH,SM,SVT,errRP,OFN,OFE,FS,TS,SS,GPS,PI", "s#------??-----", "F-------??-----" }, \
     { LOG_NKF5_MSG, sizeof(log_NKF5), \
       "NKF5","QBhhhcccCCfff","TimeUS,NI,FIX,FIY,AFI,HAGL,offset,RI,rng,Herr,eAng,eVel,ePos", "s----m???mrnm", "F----BBBBB000" }, \
     { LOG_NKF10_MSG, sizeof(log_RngBcnDebug), \
@@ -1422,7 +1423,7 @@ struct PACKED log_Arm_Disarm {
     { LOG_XKF3_MSG, sizeof(log_NKF3), \
       "XKF3","QBcccccchhhcc","TimeUS,C,IVN,IVE,IVD,IPN,IPE,IPD,IMX,IMY,IMZ,IYAW,IVT", "s#nnnmmmGGG??", "F-BBBBBBCCCBB" }, \
     { LOG_XKF4_MSG, sizeof(log_NKF4), \
-      "XKF4","QBcccccfbbHBHHb","TimeUS,C,SV,SP,SH,SM,SVT,errRP,OFN,OFE,FS,TS,SS,GPS,PI", "s#------??-----", "F-------??-----" }, \
+      "XKF4","QBcccccfbbHBIHb","TimeUS,C,SV,SP,SH,SM,SVT,errRP,OFN,OFE,FS,TS,SS,GPS,PI", "s#------??-----", "F-------??-----" }, \
     { LOG_XKF5_MSG, sizeof(log_NKF5), \
       "XKF5","QBhhhcccCCfff","TimeUS,NI,FIX,FIY,AFI,HAGL,offset,RI,rng,Herr,eAng,eVel,ePos", "s----m???mrnm", "F----BBBBB000" }, \
     { LOG_XKF10_MSG, sizeof(log_RngBcnDebug), \
@@ -1533,7 +1534,7 @@ struct PACKED log_Arm_Disarm {
     { LOG_RALLY_MSG, sizeof(log_Rally), \
       "RALY", "QBBLLh", "TimeUS,Tot,Seq,Lat,Lng,Alt", "s--DUm", "F--GGB" },  \
     { LOG_MAV_MSG, sizeof(log_MAV),   \
-      "MAV", "QBHHH",   "TimeUS,chan,txp,rxp,rxdp", "s#---", "F-000" },   \
+      "MAV", "QBHHHB",   "TimeUS,chan,txp,rxp,rxdp,flags", "s#----", "F-000-" },   \
     { LOG_VISUALODOM_MSG, sizeof(log_VisualOdom), \
       "VISO", "Qffffffff", "TimeUS,dt,AngDX,AngDY,AngDZ,PosDX,PosDY,PosDZ,conf", "ssrrrmmm-", "FF000000-" }, \
     { LOG_OPTFLOW_MSG, sizeof(log_Optflow), \
@@ -1545,7 +1546,7 @@ struct PACKED log_Arm_Disarm {
     { LOG_EVENT_MSG, sizeof(log_Event), \
       "EV",   "QB",           "TimeUS,Id", "s-", "F-" }, \
     { LOG_ARM_DISARM_MSG, sizeof(log_Arm_Disarm), \
-      "ARM", "QBHBB", "TimeUS,ArmState,ArmChecks,Forced,Method", "s----", "F----" }, \
+      "ARM", "QBIBB", "TimeUS,ArmState,ArmChecks,Forced,Method", "s----", "F----" }, \
     { LOG_ERROR_MSG, sizeof(log_Error), \
       "ERR",   "QBB",         "TimeUS,Subsys,ECode", "s--", "F--" }
 

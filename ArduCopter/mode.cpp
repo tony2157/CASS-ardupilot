@@ -256,6 +256,13 @@ bool Copter::set_mode(Mode::Number mode, ModeReason reason)
         return false;
     }
 
+#if MODE_ZIGZAG_ENABLED == ENABLED && SPRAYER_ENABLED == ENABLED
+    // The pump will stop if the flight mode is changed from ZigZag to other
+    if (control_mode == Mode::Number::ZIGZAG && g2.zigzag_auto_pump_enabled) {
+        copter.sprayer.run(false);
+    }
+#endif
+
     // perform any cleanup required by previous flight mode
     exit_mode(flightmode, new_flightmode);
 
@@ -501,16 +508,19 @@ void Mode::make_safe_spool_down()
  */
 int32_t Mode::get_alt_above_ground_cm(void)
 {
-    int32_t alt_above_ground;
-    if (copter.rangefinder_alt_ok()) {
-        alt_above_ground = copter.rangefinder_state.alt_cm_filt.get();
-    } else {
-        bool navigating = pos_control->is_active_xy();
-        if (!navigating || !copter.current_loc.get_alt_cm(Location::AltFrame::ABOVE_TERRAIN, alt_above_ground)) {
-            alt_above_ground = copter.current_loc.alt;
-        }
+    int32_t alt_above_ground_cm;
+    if (copter.get_rangefinder_height_interpolated_cm(alt_above_ground_cm)) {
+        return alt_above_ground_cm;
     }
-    return alt_above_ground;
+    if (!pos_control->is_active_xy()) {
+        return copter.current_loc.alt;
+    }
+    if (copter.current_loc.get_alt_cm(Location::AltFrame::ABOVE_TERRAIN, alt_above_ground_cm)) {
+        return alt_above_ground_cm;
+    }
+
+    // Assume the Earth is flat:
+    return copter.current_loc.alt;
 }
 
 void Mode::land_run_vertical_control(bool pause_descent)

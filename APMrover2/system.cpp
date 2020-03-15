@@ -6,12 +6,6 @@ The init_ardupilot function processes everything we need for an in - air restart
 *****************************************************************************/
 
 #include "Rover.h"
-#include <AP_Common/AP_FWVersion.h>
-
-static void mavlink_delay_cb_static()
-{
-    rover.mavlink_delay_cb();
-}
 
 static void failsafe_check_static()
 {
@@ -20,35 +14,10 @@ static void failsafe_check_static()
 
 void Rover::init_ardupilot()
 {
-    // initialise console serial port
-    serial_manager.init_console();
-
-    hal.console->printf("\n\nInit %s"
-                        "\n\nFree RAM: %u\n",
-                        AP::fwversion().fw_string,
-                        (unsigned)hal.util->available_memory());
-
-    //
-    // Check the EEPROM format version before loading any parameters from EEPROM.
-    //
-
-    load_parameters();
 #if STATS_ENABLED == ENABLED
     // initialise stats module
     g2.stats.init();
 #endif
-
-    mavlink_system.sysid = g.sysid_this_mav;
-
-    // initialise serial ports
-    serial_manager.init();
-
-    // setup first port early to allow BoardConfig to report errors
-    gcs().setup_console();
-
-    // Register mavlink_delay_cb, which will run anytime you have
-    // more than 5ms remaining in your call to hal.scheduler->delay
-    hal.scheduler->register_delay_callback(mavlink_delay_cb_static, 5);
 
     BoardConfig.init();
 #if HAL_WITH_UAVCAN
@@ -117,7 +86,6 @@ void Rover::init_ardupilot()
 
     ins.set_log_raw_bit(MASK_LOG_IMU_RAW);
 
-    set_control_channels();  // setup radio channels and outputs ranges
     init_rc_in();            // sets up rc channels deadzone
     g2.motors.init();        // init motors including setting servo out channels ranges
     SRV_Channels::enable_aux_servos();
@@ -162,10 +130,6 @@ void Rover::init_ardupilot()
 
     // flag that initialisation has completed
     initialised = true;
-
-#if AP_PARAM_KEY_DUMP
-    AP_Param::show_all(hal.console, true);
-#endif
 }
 
 //*********************************************************************************

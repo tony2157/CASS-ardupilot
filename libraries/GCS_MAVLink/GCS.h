@@ -440,6 +440,7 @@ protected:
     MAV_RESULT handle_command_do_set_mode(const mavlink_command_long_t &packet);
     MAV_RESULT handle_command_get_home_position(const mavlink_command_long_t &packet);
     MAV_RESULT handle_command_do_fence_enable(const mavlink_command_long_t &packet);
+    MAV_RESULT handle_command_debug_trap(const mavlink_command_long_t &packet);
 
     void handle_optical_flow(const mavlink_message_t &msg);
 
@@ -869,6 +870,7 @@ public:
         return 200;
     }
 
+    void init();
     void setup_console();
     void setup_uarts();
 
@@ -907,6 +909,8 @@ public:
 
 protected:
 
+    virtual uint8_t sysid_this_mav() const = 0;
+
     virtual GCS_MAVLINK *new_gcs_mavlink_backend(GCS_MAVLINK_Parameters &params,
                                                  AP_HAL::UARTDriver &uart) = 0;
 
@@ -930,6 +934,7 @@ private:
         uint8_t                 bitmask;
         mavlink_statustext_t    msg;
     };
+    char statustext_printf_buffer[256+1];
 
     virtual AP_GPS::GPS_Status min_status_for_gps_healthy() const {
         // NO_FIX simply excludes NO_GPS
@@ -973,6 +978,12 @@ private:
 
     // timer called to implement pass-thru
     void passthru_timer();
+
+    // this contains the index of the GCS_MAVLINK backend we will
+    // first call update_send on.  It is incremented each time
+    // GCS::update_send is called so we don't starve later links of
+    // time in which they are permitted to send messages.
+    uint8_t first_backend_to_send;
 };
 
 GCS &gcs();

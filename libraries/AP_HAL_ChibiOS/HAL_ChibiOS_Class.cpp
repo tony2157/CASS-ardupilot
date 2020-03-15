@@ -91,6 +91,12 @@ static ChibiOS::Scheduler schedulerInstance;
 static ChibiOS::Util utilInstance;
 static Empty::OpticalFlow opticalFlowDriver;
 
+#if HAL_WITH_DSP
+static ChibiOS::DSP dspDriver;
+#else
+static Empty::DSP dspDriver;
+#endif
+
 #ifndef HAL_NO_FLASH_SUPPORT
 static ChibiOS::Flash flashDriver;
 #else
@@ -126,6 +132,7 @@ HAL_ChibiOS::HAL_ChibiOS() :
         &utilInstance,
         &opticalFlowDriver,
         &flashDriver,
+        &dspDriver,
         nullptr
         )
 {}
@@ -279,8 +286,8 @@ void HAL_ChibiOS::run(int argc, char * const argv[], Callbacks* callbacks) const
      *   RTOS is active.
      */
 
-#ifdef HAL_USB_PRODUCT_ID
-  setup_usb_strings();
+#if HAL_USE_SERIAL_USB == TRUE
+    usb_initialise();
 #endif
 
 #ifdef HAL_STDOUT_SERIAL

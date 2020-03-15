@@ -99,8 +99,8 @@ struct PACKED log_Nav_Tuning {
     LOG_PACKET_HEADER;
     uint64_t time_us;
     float wp_distance;
-    uint16_t wp_bearing_cd;
-    uint16_t nav_bearing_cd;
+    float wp_bearing;
+    float nav_bearing;
     uint16_t yaw;
     float xtrack_error;
 };
@@ -112,8 +112,8 @@ void Rover::Log_Write_Nav_Tuning()
         LOG_PACKET_HEADER_INIT(LOG_NTUN_MSG),
         time_us             : AP_HAL::micros64(),
         wp_distance         : control_mode->get_distance_to_destination(),
-        wp_bearing_cd       : (uint16_t)wrap_360_cd(control_mode->wp_bearing() * 100),
-        nav_bearing_cd      : (uint16_t)wrap_360_cd(control_mode->nav_bearing() * 100),
+        wp_bearing          : control_mode->wp_bearing(),
+        nav_bearing         : control_mode->nav_bearing(),
         yaw                 : (uint16_t)ahrs.yaw_sensor,
         xtrack_error        : control_mode->crosstrack_error()
     };
@@ -138,14 +138,15 @@ void Rover::Log_Write_Sail()
         wind_speed_true = g2.windvane.get_true_wind_speed();
         wind_speed_apparent = g2.windvane.get_apparent_wind_speed();
     }
-    logger.Write("SAIL", "TimeUS,WindDirTrue,WindDirApp,WindSpdTrue,WindSpdApp,SailOut,VMG",
-                        "shhnn%n", "F000000", "Qffffff",
+    logger.Write("SAIL", "TimeUS,WndDrTru,WndDrApp,WndSpdTru,WndSpdApp,MainOut,WingOut,VMG",
+                        "shhnn%%n", "F0000000", "Qfffffff",
                         AP_HAL::micros64(),
                         (double)wind_dir_abs,
                         (double)wind_dir_rel,
                         (double)wind_speed_true,
                         (double)wind_speed_apparent,
                         (double)g2.motors.get_mainsail(),
+                        (double)g2.motors.get_wingsail(),
                         (double)g2.sailboat.get_VMG());
 }
 
@@ -252,7 +253,7 @@ const LogStructure Rover::log_structure[] = {
     { LOG_THR_MSG, sizeof(log_Throttle),
       "THR", "Qhffff", "TimeUS,ThrIn,ThrOut,DesSpeed,Speed,AccY", "s--nno", "F--000" },
     { LOG_NTUN_MSG, sizeof(log_Nav_Tuning),
-      "NTUN", "QfHHHf", "TimeUS,WpDist,WpBrg,DesYaw,Yaw,XTrack", "smdddm", "F0BBB0" },
+      "NTUN", "QfffHf", "TimeUS,WpDist,WpBrg,DesYaw,Yaw,XTrack", "smhhdm", "F000B0" },
     { LOG_STEERING_MSG, sizeof(log_Steering),
       "STER", "Qhfffff",   "TimeUS,SteerIn,SteerOut,DesLatAcc,LatAcc,DesTurnRate,TurnRate", "s--ookk", "F--0000" },
     { LOG_GUIDEDTARGET_MSG, sizeof(log_GuidedTarget),

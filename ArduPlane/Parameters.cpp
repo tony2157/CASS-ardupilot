@@ -852,6 +852,7 @@ const AP_Param::Info Plane::var_info[] = {
     // @Param: CRASH_DETECT
     // @DisplayName: Crash Detection
     // @Description: Automatically detect a crash during AUTO flight and perform the bitmask selected action(s). Disarm will turn off motor for safety and to help against burning out ESC and motor. Set to 0 to disable crash detection.
+    // @Values: 0:Disabled
     // @Bitmask: 0:Disarm
     // @User: Advanced
     ASCALAR(crash_detection_enable,         "CRASH_DETECT",   0),
@@ -1049,13 +1050,17 @@ const AP_Param::Info Plane::var_info[] = {
     GOBJECT(rally,  "RALLY_",       AP_Rally),
 
 #if AP_AHRS_NAVEKF_AVAILABLE
+#if HAL_NAVEKF2_AVAILABLE
     // @Group: EK2_
     // @Path: ../libraries/AP_NavEKF2/AP_NavEKF2.cpp
-    GOBJECTN(EKF2, NavEKF2, "EK2_", NavEKF2),
+    GOBJECTN(ahrs.EKF2, NavEKF2, "EK2_", NavEKF2),
+#endif
 
+#if HAL_NAVEKF3_AVAILABLE
     // @Group: EK3_
     // @Path: ../libraries/AP_NavEKF3/AP_NavEKF3.cpp
-    GOBJECTN(EKF3, NavEKF3, "EK3_", NavEKF3),
+    GOBJECTN(ahrs.EKF3, NavEKF3, "EK3_", NavEKF3),
+#endif
 #endif
 
     // @Group: RPM
@@ -1238,7 +1243,7 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     AP_GROUPINFO("DSPOILER_AILMTCH", 21, ParametersG2, crow_flap_aileron_matching, 100),
 
 #if EFI_ENABLED
-    // @Group: EFI_
+    // @Group: EFI
     // @Path: ../libraries/AP_EFI/AP_EFI.cpp
     AP_SUBGROUPINFO(efi, "EFI", 22, ParametersG2, AP_EFI),
 #endif

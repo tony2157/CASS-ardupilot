@@ -465,13 +465,13 @@ public:
 
     // return the amount of yaw angle change due to the last yaw angle reset in radians
     // returns the time of the last yaw angle reset or 0 if no reset has ever occurred
-    virtual uint32_t getLastYawResetAngle(float &yawAng) const {
+    virtual uint32_t getLastYawResetAngle(float &yawAng) {
         return 0;
     };
 
     // return the amount of NE position change in metres due to the last reset
     // returns the time of the last reset or 0 if no reset has ever occurred
-    virtual uint32_t getLastPosNorthEastReset(Vector2f &pos) const WARN_IF_UNUSED {
+    virtual uint32_t getLastPosNorthEastReset(Vector2f &pos) WARN_IF_UNUSED {
         return 0;
     };
 
@@ -483,7 +483,7 @@ public:
 
     // return the amount of vertical position change due to the last reset in meters
     // returns the time of the last reset or 0 if no reset has ever occurred
-    virtual uint32_t getLastPosDownReset(float &posDelta) const WARN_IF_UNUSED {
+    virtual uint32_t getLastPosDownReset(float &posDelta) WARN_IF_UNUSED {
         return 0;
     };
 
@@ -550,6 +550,9 @@ public:
     // Write position and quaternion data from an external navigation system
     virtual void writeExtNavData(const Vector3f &sensOffset, const Vector3f &pos, const Quaternion &quat, float posErr, float angErr, uint32_t timeStamp_ms, uint32_t resetTime_ms) { }
 
+    // return current vibration vector for primary IMU
+    Vector3f get_vibration(void) const;
+    
     // allow threads to lock against AHRS update
     HAL_Semaphore &get_semaphore(void) {
         return _rsem;
@@ -559,7 +562,7 @@ protected:
     void update_nmea_out();
 
     // multi-thread access support
-    HAL_Semaphore_Recursive _rsem;
+    HAL_Semaphore _rsem;
 
     AHRS_VehicleClass _vehicle_class;
 

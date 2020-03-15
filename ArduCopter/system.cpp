@@ -8,12 +8,6 @@
 *
 *****************************************************************************/
 
-static void mavlink_delay_cb_static()
-{
-    copter.mavlink_delay_cb();
-}
-
-
 static void failsafe_check_static()
 {
     copter.failsafe_check();
@@ -21,39 +15,12 @@ static void failsafe_check_static()
 
 void Copter::init_ardupilot()
 {
-    // initialise serial port
-    serial_manager.init_console();
-
-    hal.console->printf("\n\nInit %s"
-                        "\n\nFree RAM: %u\n",
-                        AP::fwversion().fw_string,
-                        (unsigned)hal.util->available_memory());
-
-    // load parameters from EEPROM
-    load_parameters();
-
-    // time per loop - this gets updated in the main loop() based on
-    // actual loop rate
-    G_Dt = 1.0 / scheduler.get_loop_rate_hz();
 
 #if STATS_ENABLED == ENABLED
     // initialise stats module
     g2.stats.init();
 #endif
 
-    // identify ourselves correctly with the ground station
-    mavlink_system.sysid = g.sysid_this_mav;
-    
-    // initialise serial ports
-    serial_manager.init();
-
-    // setup first port early to allow BoardConfig to report errors
-    gcs().setup_console();
-
-    // Register mavlink_delay_cb, which will run anytime you have
-    // more than 5ms remaining in your call to hal.scheduler->delay
-    hal.scheduler->register_delay_callback(mavlink_delay_cb_static, 5);
-    
     BoardConfig.init();
 #if HAL_WITH_UAVCAN
     BoardConfig_CAN.init();
@@ -159,6 +126,7 @@ void Copter::init_ardupilot()
     attitude_control->parameter_sanity_check();
     pos_control->set_dt(scheduler.get_loop_period_s());
 
+
     // init the optical flow sensor
     init_optflow();
 
@@ -260,10 +228,6 @@ void Copter::init_ardupilot()
 
     // flag that initialisation has completed
     ap.initialised = true;
-
-#if AP_PARAM_KEY_DUMP
-    AP_Param::show_all(hal.console, true);
-#endif
 }
 
 
@@ -305,9 +269,10 @@ void Copter::update_dynamic_notch()
 
 #if RPM_ENABLED == ENABLED
         case HarmonicNotchDynamicMode::UpdateRPM: // rpm sensor based tracking
-            if (rpm_sensor.healthy(0)) {
+            float rpm;
+            if (rpm_sensor.get_rpm(0, rpm)) {
                 // set the harmonic notch filter frequency from the main rotor rpm
-                ins.update_harmonic_notch_freq_hz(MAX(ref_freq, rpm_sensor.get_rpm(0) * ref / 60.0f));
+                ins.update_harmonic_notch_freq_hz(MAX(ref_freq, rpm * ref / 60.0f));
             } else {
                 ins.update_harmonic_notch_freq_hz(ref_freq);
             }
@@ -316,6 +281,12 @@ void Copter::update_dynamic_notch()
 #ifdef HAVE_AP_BLHELI_SUPPORT
         case HarmonicNotchDynamicMode::UpdateBLHeli: // BLHeli based tracking
             ins.update_harmonic_notch_freq_hz(MAX(ref_freq, AP_BLHeli::get_singleton()->get_average_motor_frequency_hz() * ref));
+            break;
+#endif
+#if HAL_GYROFFT_ENABLED
+        case HarmonicNotchDynamicMode::UpdateGyroFFT: // FFT based tracking
+            // set the harmonic notch filter frequency scaled on measured frequency
+            ins.update_harmonic_notch_freq_hz(gyro_fft.get_weighted_noise_center_freq_hz());
             break;
 #endif
         case HarmonicNotchDynamicMode::Fixed: // static

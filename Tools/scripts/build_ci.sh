@@ -24,12 +24,7 @@ if [ -z "$CI_BUILD_TARGET" ]; then
     CI_BUILD_TARGET="sitl linux fmuv3"
 fi
 
-declare -A waf_supported_boards
-
 waf=modules/waf/waf-light
-
-# get list of boards supported by the waf build
-for board in $($waf list_boards | head -n1); do waf_supported_boards[$board]=1; done
 
 echo "Targets: $CI_BUILD_TARGET"
 echo "Compiler: $c_compiler"
@@ -79,8 +74,12 @@ function run_autotest() {
 
 for t in $CI_BUILD_TARGET; do
     # special case for SITL testing in CI
-    if [ "$t" == "sitltest-copter" ]; then
-        run_autotest "Copter" "build.ArduCopter" "fly.ArduCopter"
+    if [ "$t" == "sitltest-copter-tests1" ]; then
+        run_autotest "Copter" "build.ArduCopter" "fly.ArduCopterTests1"
+        continue
+    fi
+    if [ "$t" == "sitltest-copter-tests2" ]; then
+        run_autotest "Copter" "build.ArduCopter" "fly.ArduCopterTests2"
         continue
     fi
     if [ "$t" == "sitltest-plane" ]; then
@@ -93,6 +92,10 @@ for t in $CI_BUILD_TARGET; do
     fi
     if [ "$t" == "sitltest-rover" ]; then
         run_autotest "Rover" "build.APMrover2" "drive.APMrover2"
+        continue
+    fi
+    if [ "$t" == "sitltest-tracker" ]; then
+        run_autotest "Tracker" "build.AntennaTracker" "test.AntennaTracker"
         continue
     fi
     if [ "$t" == "sitltest-balancebot" ]; then
@@ -127,11 +130,11 @@ for t in $CI_BUILD_TARGET; do
         $waf clean
         $waf AP_Periph
         echo "Building f303 bootloader"
-        $waf configure --board f303-GPS --bootloader
+        $waf configure --board f303-Universal --bootloader
         $waf clean
         $waf bootloader
         echo "Building f303 peripheral fw"
-        $waf configure --board f303-GPS
+        $waf configure --board f303-Universal
         $waf clean
         $waf AP_Periph
         continue
@@ -183,7 +186,7 @@ for t in $CI_BUILD_TARGET; do
         continue
     fi
 
-    if [[ -n ${waf_supported_boards[$t]} && -z ${CI_CRON_JOB+1} ]]; then
+    if [[ -z ${CI_CRON_JOB+1} ]]; then
         echo "Starting waf build for board ${t}..."
         $waf configure --board "$t" \
                 --enable-benchmarks \

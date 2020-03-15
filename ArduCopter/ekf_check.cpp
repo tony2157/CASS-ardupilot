@@ -198,11 +198,12 @@ void Copter::check_ekf_reset()
         AP::logger().Write_Event(LogEvent::EKF_YAW_RESET);
     }
 
-#if AP_AHRS_NAVEKF_AVAILABLE
+#if AP_AHRS_NAVEKF_AVAILABLE && HAL_NAVEKF2_AVAILABLE
+
     // check for change in primary EKF (log only, AC_WPNav handles position target adjustment)
-    if ((EKF2.getPrimaryCoreIndex() != ekf_primary_core) && (EKF2.getPrimaryCoreIndex() != -1)) {
+    if ((ahrs.EKF2.getPrimaryCoreIndex() != ekf_primary_core) && (ahrs.EKF2.getPrimaryCoreIndex() != -1)) {
         attitude_control->inertial_frame_reset();
-        ekf_primary_core = EKF2.getPrimaryCoreIndex();
+        ekf_primary_core = ahrs.EKF2.getPrimaryCoreIndex();
         AP::logger().Write_Error(LogErrorSubsystem::EKF_PRIMARY, LogErrorCode(ekf_primary_core));
         gcs().send_text(MAV_SEVERITY_WARNING, "EKF primary changed:%d", (unsigned)ekf_primary_core);
     }
@@ -228,7 +229,7 @@ void Copter::check_vibration()
     }
     const bool innov_velD_posD_positive = is_positive(vel_innovation.z) && is_positive(pos_innovation.z);
 
-    // check if EKF's NKF4.SH and NK4.SV > 1.0
+    // check if vertical velocity variance is at least 1 (NK4.SV >= 1.0)
     float position_variance, vel_variance, height_variance, tas_variance;
     Vector3f mag_variance;
     Vector2f offset;

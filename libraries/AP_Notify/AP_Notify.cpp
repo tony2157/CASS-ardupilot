@@ -35,6 +35,7 @@
 #include "SITL_SFML_LED.h"
 #include <stdio.h>
 #include "AP_BoardLED2.h"
+#include "ProfiLED.h"
 
 extern const AP_HAL::HAL& hal;
 
@@ -53,7 +54,7 @@ AP_Notify *AP_Notify::_singleton;
 #if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
   #define BUILD_DEFAULT_LED_TYPE (Notify_LED_Board | I2C_LEDS)
 
-// Linux boards    
+// Linux boards
 #elif CONFIG_HAL_BOARD == HAL_BOARD_LINUX
   #if CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_NAVIO
     #define BUILD_DEFAULT_LED_TYPE (Notify_LED_Board | I2C_LEDS |\
@@ -145,7 +146,7 @@ const AP_Param::GroupInfo AP_Notify::var_info[] = {
     // @Param: LED_TYPES
     // @DisplayName: LED Driver Types
     // @Description: Controls what types of LEDs will be enabled
-    // @Bitmask: 0:Build in LED, 1:Internal ToshibaLED, 2:External ToshibaLED, 3:External PCA9685, 4:Oreo LED, 5:UAVCAN, 6:NCP5623 External, 7:NCP5623 Internal, 8:NeoPixel
+    // @Bitmask: 0:Build in LED, 1:Internal ToshibaLED, 2:External ToshibaLED, 3:External PCA9685, 4:Oreo LED, 5:UAVCAN, 6:NCP5623 External, 7:NCP5623 Internal, 8:NeoPixel, 9:ProfiLED
     // @User: Advanced
     AP_GROUPINFO("LED_TYPES", 6, AP_Notify, _led_type, BUILD_DEFAULT_LED_TYPE),
 
@@ -164,7 +165,14 @@ const AP_Param::GroupInfo AP_Notify::var_info[] = {
     // @Range: 0 100
     // @Units: %
     AP_GROUPINFO("BUZZ_VOLUME", 8, AP_Notify, _buzzer_volume, 100),
-    
+
+    // @Param: LED_LEN
+    // @DisplayName: Serial LED String Length
+    // @Description: The number of Serial LED's to use for notifications (NeoPixel's and ProfiLED)
+    // @Range: 1 32
+    // @User: Advanced
+    AP_GROUPINFO("LED_LEN", 9, AP_Notify, _led_len, 1),
+
     AP_GROUPEND
 };
 
@@ -221,6 +229,8 @@ void AP_Notify::add_backends(void)
                 ADD_BACKEND(new RCOutputRGBLed(HAL_RCOUT_RGBLED_RED, HAL_RCOUT_RGBLED_GREEN, HAL_RCOUT_RGBLED_BLUE));
   #elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_DISCO
                 ADD_BACKEND(new DiscoLED());
+  #elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_NAVIGATOR
+                ADD_BACKEND(new DiscreteRGBLed(HAL_RGBLED_RED, HAL_RGBLED_GREEN, HAL_RGBLED_BLUE, HAL_RGBLED_NORMAL_POLARITY));
   #endif
 #endif // CONFIG_HAL_BOARD == HAL_BOARD_LINUX
 
@@ -261,6 +271,9 @@ void AP_Notify::add_backends(void)
                 break;
             case Notify_LED_NeoPixel:
                 ADD_BACKEND(new NeoPixel());
+                break;
+            case Notify_LED_ProfiLED:
+                ADD_BACKEND(new ProfiLED());
                 break;
             case Notify_LED_OreoLED:
 #if !HAL_MINIMIZE_FEATURES

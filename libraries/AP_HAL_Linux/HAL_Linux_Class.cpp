@@ -53,7 +53,8 @@ using namespace Linux;
     CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_ERLEBRAIN2 || \
     CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_BH || \
     CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_DARK || \
-    CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_PXFMINI
+    CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_PXFMINI || \
+    CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_NAVIGATOR
 static UtilRPI utilInstance;
 #else
 static Util utilInstance;
@@ -82,7 +83,8 @@ static UARTDriver uartBDriver(false);
 #if CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_NAVIO || \
     CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_ERLEBRAIN2 || \
     CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_BH || \
-    CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_PXFMINI
+    CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_PXFMINI || \
+    CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_NAVIGATOR
 static AnalogIn_ADS1115 analogIn;
 #elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_PXF || \
       CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_ERLEBOARD || \
@@ -114,7 +116,8 @@ static GPIO_BBB gpioDriver;
 #elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_ERLEBRAIN2 || \
       CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_BH || \
       CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_DARK || \
-      CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_PXFMINI
+      CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_PXFMINI || \
+      CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_NAVIGATOR
 static GPIO_RPI gpioDriver;
 #elif  CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_NAVIO || \
        CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_NAVIO2 || \
@@ -183,6 +186,8 @@ static RCOutput_PCA9685 rcoutDriver(i2c_mgr_instance.get_device(1, PCA9685_PRIMA
 static RCOutput_PCA9685 rcoutDriver(i2c_mgr_instance.get_device(1, PCA9685_QUATENARY_ADDRESS), false, 0, RPI_GPIO_4);
 #elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_DARK
 static RCOutput_PCA9685 rcoutDriver(i2c_mgr_instance.get_device(1, PCA9685_QUINARY_ADDRESS), false, 0, RPI_GPIO_27);
+#elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_NAVIGATOR
+static RCOutput_PCA9685 rcoutDriver(i2c_mgr_instance.get_device(1, PCA9685_PRIMARY_ADDRESS), false, 0, RPI_GPIO_27);
 #elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_ZYNQ || \
       CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_OCPOC_ZYNQ
 static RCOutput_ZYNQ rcoutDriver;
@@ -210,6 +215,7 @@ static OpticalFlow_Onboard opticalFlow;
 static Empty::OpticalFlow opticalFlow;
 #endif
 
+static Empty::DSP dspDriver;
 static Empty::Flash flashDriver;
 
 HAL_Linux::HAL_Linux() :
@@ -234,6 +240,7 @@ HAL_Linux::HAL_Linux() :
         &utilInstance,
         &opticalFlow,
         &flashDriver,
+        &dspDriver,
         nullptr)
 {}
 
@@ -257,6 +264,9 @@ void _usage(void)
     printf("\tcustom terrain path:\n");
     printf("\t                   --terrain-directory /var/APM/terrain\n");
     printf("\t                   -t /var/APM/terrain\n");
+    printf("\tcustom storage path:\n");
+    printf("\t                   --storage-directory /var/APM/storage\n");
+    printf("\t                   -s /var/APM/storage\n");
 #if AP_MODULE_SUPPORTED
     printf("\tmodule support:\n");
     printf("\t                   --module-directory %s\n", AP_MODULE_DEFAULT_DIRECTORY);
@@ -399,14 +409,14 @@ void HAL_Linux::setup_signal_handlers() const
     sigaction(SIGINT, &sa, NULL);
 }
 
-static HAL_Linux halInstance;
+HAL_Linux hal_linux;
 
 void HAL_Linux::exit_signal_handler(int signum)
 {
-    halInstance._should_exit = true;
+    hal_linux._should_exit = true;
 }
 
 const AP_HAL::HAL &AP_HAL::get_HAL()
 {
-    return halInstance;
+    return hal_linux;
 }

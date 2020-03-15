@@ -8,8 +8,7 @@
 #include <stdio.h>
 
 /*
-  our failsafe strategy is to detect main loop lockup and switch to
-  passing inputs straight from the RC inputs to RC outputs.
+  our failsafe strategy is to detect main loop lockup and disarm.
  */
 
 /*
@@ -37,7 +36,7 @@ void Rover::failsafe_check()
         // To-Do: log error
         if (arming.is_armed()) {
             // disarm motors
-            arming.disarm();
+            arming.disarm(AP_Arming::Method::CPUFAILSAFE);
         }
     }
 }
@@ -45,7 +44,7 @@ void Rover::failsafe_check()
 /*
   called to set/unset a failsafe event.
  */
-void Rover::failsafe_trigger(uint8_t failsafe_type, bool on)
+void Rover::failsafe_trigger(uint8_t failsafe_type, const char* type_str, bool on)
 {
     uint8_t old_bits = failsafe.bits;
     if (on) {
@@ -59,7 +58,7 @@ void Rover::failsafe_trigger(uint8_t failsafe_type, bool on)
     }
     if (failsafe.triggered != 0 && failsafe.bits == 0) {
         // a failsafe event has ended
-        gcs().send_text(MAV_SEVERITY_INFO, "Failsafe ended");
+        gcs().send_text(MAV_SEVERITY_INFO, "%s Failsafe Cleared", type_str);
     }
 
     failsafe.triggered &= failsafe.bits;
@@ -70,7 +69,7 @@ void Rover::failsafe_trigger(uint8_t failsafe_type, bool on)
         (control_mode != &mode_rtl) &&
         ((control_mode != &mode_hold || (g2.fs_options & (uint32_t)Failsafe_Options::Failsafe_Option_Active_In_Hold)))) {
         failsafe.triggered = failsafe.bits;
-        gcs().send_text(MAV_SEVERITY_WARNING, "Failsafe trigger 0x%x", (unsigned int)failsafe.triggered);
+        gcs().send_text(MAV_SEVERITY_WARNING, "%s Failsafe", type_str);
 
         // clear rc overrides
         RC_Channels::clear_overrides();
@@ -137,7 +136,7 @@ void Rover::handle_battery_failsafe(const char* type_str, const int8_t action)
                 snprintf(battery_type_str, 17, "%s battery", type_str);
                 g2.afs.gcs_terminate(true, battery_type_str);
 #else
-                arming.disarm();
+                arming.disarm(AP_Arming::Method::BATTERYFAILSAFE);
 #endif // ADVANCED_FAILSAFE == ENABLED
                 break;
         }
