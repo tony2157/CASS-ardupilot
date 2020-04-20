@@ -235,7 +235,7 @@ def start_SITL(binary,
                home=None,
                model=None,
                speedup=1,
-               defaults_file=None,
+               defaults_filepath=None,
                unhide_parameters=False,
                gdbserver=False,
                breakpoints=[],
@@ -243,6 +243,10 @@ def start_SITL(binary,
                vicon=False,
                customisations=[],
                lldb=False):
+
+    if model is None:
+        raise ValueError("model must not be None")
+
     """Launch a SITL instance."""
     cmd = []
     if valgrind and os.path.exists('/usr/bin/valgrind'):
@@ -311,12 +315,13 @@ def start_SITL(binary,
         cmd.append('-S')
     if home is not None:
         cmd.extend(['--home', home])
-    if model is not None:
-        cmd.extend(['--model', model])
+    cmd.extend(['--model', model])
     if speedup != 1:
         cmd.extend(['--speedup', str(speedup)])
-    if defaults_file is not None:
-        cmd.extend(['--defaults', defaults_file])
+    if defaults_filepath is not None:
+        if type(defaults_filepath) == list:
+            defaults_filepath = ",".join(defaults_filepath)
+        cmd.extend(['--defaults', defaults_filepath])
     if unhide_parameters:
         cmd.extend(['--unhide-groups'])
     if vicon:

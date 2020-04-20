@@ -1693,7 +1693,7 @@ void AC_AutoTune::get_poshold_attitude(float &roll_cd_out, float &pitch_cd_out, 
 // @LoggerMessage: ATUN
 // @Description: Copter/QuadPlane AutoTune
 // @Vehicles: Copter, Plane
-// @Field: TimeUS: microseconds since system startup
+// @Field: TimeUS: Time since system startup
 // @Field: Axis: which axis is currently being tuned
 // @Field: TuneStep: step in autotune process
 // @Field: Targ: target angle or rate, depending on tuning step
@@ -1728,6 +1728,11 @@ void AC_AutoTune::Log_Write_AutoTune(uint8_t _axis, uint8_t tune_step, float mea
 // Write an Autotune data packet
 void AC_AutoTune::Log_Write_AutoTuneDetails(float angle_cd, float rate_cds)
 {
+// @LoggerMessage: ATDE
+// @Description: AutoTune data packet
+// @Field: TimeUS: Time since system startup
+// @Field: Angle: current angle
+// @Field: Rate: current angular rate
     AP::logger().Write(
         "ATDE",
         "TimeUS,Angle,Rate",

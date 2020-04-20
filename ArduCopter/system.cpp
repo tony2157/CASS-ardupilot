@@ -175,9 +175,6 @@ void Copter::init_ardupilot()
     g2.beacon.init();
 #endif
 
-    // init visual odometry
-    init_visual_odom();
-
 #if RPM_ENABLED == ENABLED
     // initialise AP_RPM library
     rpm_sensor.init();
@@ -331,9 +328,6 @@ bool Copter::ekf_position_ok() const
 // optflow_position_ok - returns true if optical flow based position estimate is ok
 bool Copter::optflow_position_ok() const
 {
-#if OPTFLOW != ENABLED && VISUAL_ODOMETRY_ENABLED != ENABLED
-    return false;
-#else
     // return immediately if EKF not used
     if (!ahrs.have_inertial_nav()) {
         return false;
@@ -346,8 +340,8 @@ bool Copter::optflow_position_ok() const
         enabled = true;
     }
 #endif
-#if VISUAL_ODOMETRY_ENABLED == ENABLED
-    if (g2.visual_odom.enabled()) {
+#if HAL_VISUALODOM_ENABLED
+    if (visual_odom.enabled()) {
         enabled = true;
     }
 #endif
@@ -364,7 +358,6 @@ bool Copter::optflow_position_ok() const
     } else {
         return (filt_status.flags.horiz_pos_rel && !filt_status.flags.const_pos_mode);
     }
-#endif
 }
 
 // update_auto_armed - update status of auto_armed flag

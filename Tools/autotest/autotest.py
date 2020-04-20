@@ -17,7 +17,7 @@ import sys
 import time
 import traceback
 
-import apmrover2
+import rover
 import arducopter
 import arduplane
 import ardusub
@@ -167,7 +167,7 @@ def param_parse_filepath():
 def all_vehicles():
     return ('ArduPlane',
             'ArduCopter',
-            'APMrover2',
+            'Rover',
             'AntennaTracker',
             'ArduSub')
 
@@ -299,9 +299,9 @@ tester_class_map = {
     "test.CopterTests2": arducopter.AutoTestCopterTests2,
     "test.Plane": arduplane.AutoTestPlane,
     "test.QuadPlane": quadplane.AutoTestQuadPlane,
-    "test.Rover": apmrover2.AutoTestRover,
+    "test.Rover": rover.AutoTestRover,
     "test.BalanceBot": balancebot.AutoTestBalanceBot,
-    "test.Helicopter,": arducopter.AutoTestHeli,
+    "test.Helicopter": arducopter.AutoTestHeli,
     "test.Sub": ardusub.AutoTestSub,
     "test.Tracker": antennatracker.AutoTestTracker,
 }
@@ -540,7 +540,7 @@ def write_fullresults():
     results.addglob('APM:Libraries documentation', 'docs/libraries/index.html')
     results.addglob('APM:Plane documentation', 'docs/ArduPlane/index.html')
     results.addglob('APM:Copter documentation', 'docs/ArduCopter/index.html')
-    results.addglob('APM:Rover documentation', 'docs/APMrover2/index.html')
+    results.addglob('APM:Rover documentation', 'docs/Rover/index.html')
     results.addglob('APM:Sub documentation', 'docs/ArduSub/index.html')
     results.addglobimage("Flight Track", '*.png')
 
@@ -634,6 +634,16 @@ def run_tests(steps):
 
     return passed
 
+def list_subtests(*args, **kwargs):
+    for vehicle in sorted(['Sub', 'Copter', 'Plane', 'Tracker', 'Rover']):
+        tester_class = tester_class_map["test.%s" % vehicle]
+        tester = tester_class("/bin/true", None)
+        subtests = tester.tests()
+        print("%s:" % vehicle)
+        for subtest in sorted(subtests, key=lambda x : x[0]):
+            (name, description, function) = subtest
+            print("    %s: %s" % (name, description))
+        print("")
 
 if __name__ == "__main__":
     ''' main program '''
@@ -641,7 +651,18 @@ if __name__ == "__main__":
 
     os.putenv('TMPDIR', util.reltopdir('tmp'))
 
-    parser = optparse.OptionParser("autotest")
+    class MyOptionParser(optparse.OptionParser):
+        def format_epilog(self, formatter):
+            return self.epilog
+
+    parser = MyOptionParser(
+        "autotest", epilog=""
+        "e.g. autotest.py build.Rover test.Rover # test Rover\n"
+        "e.g. autotest.py build.Rover test.Rover build.Plane test.Plane # test Rover and Plane\n"
+        "e.g. autotest.py --debug --valgrind build.Rover test.Rover # test Rover under Valgrind\n"
+        "e.g. autotest.py --debug --gdb build.Tracker test.Tracker # run Tracker under gdb\n"
+        "e.g. autotest.py --debug --gdb build.Sub test.Sub.DiveManual # do specific Sub test\n"
+    )
     parser.add_option("--skip",
                       type='string',
                       default='',
@@ -650,6 +671,10 @@ if __name__ == "__main__":
                       action='store_true',
                       default=False,
                       help='list the available steps')
+    parser.add_option("--list-subtests",
+                      action='store_true',
+                      default=False,
+                      help='list available subtests e.g. test.Copter')
     parser.add_option("--viewerip",
                       default=None,
                       help='IP address to send MAVLink and fg packets to')
@@ -826,6 +851,10 @@ if __name__ == "__main__":
     if opts.list:
         for step in steps:
             print(step)
+        sys.exit(0)
+
+    if opts.list_subtests:
+        list_subtests()
         sys.exit(0)
 
     util.mkdir_p(buildlogs_dirpath())

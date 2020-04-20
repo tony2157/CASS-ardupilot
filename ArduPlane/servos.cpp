@@ -470,16 +470,6 @@ void Plane::set_servos_controlled(void)
         SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, 
             constrain_int16(quadplane.forward_throttle_pct(), min_throttle, max_throttle));
     }
-
-#if SOARING_ENABLED == ENABLED
-    // suppress throttle when soaring is active
-    if ((control_mode == &mode_fbwb || control_mode == &mode_cruise ||
-        control_mode == &mode_auto || control_mode == &mode_loiter) &&
-        g2.soaring_controller.is_active() &&
-        g2.soaring_controller.get_throttle_suppressed()) {
-        SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, 0);
-    }
-#endif
 }
 
 /*
@@ -557,46 +547,23 @@ void Plane::set_servos_flaps(void)
 
 #if LANDING_GEAR_ENABLED == ENABLED
 /*
-  change and report landing gear
- */
-void Plane::change_landing_gear(AP_LandingGear::LandingGearCommand cmd)
-{
-    if (cmd != (AP_LandingGear::LandingGearCommand)gear.last_cmd) {
-        if (SRV_Channels::function_assigned(SRV_Channel::k_landing_gear_control)) {
-            g2.landing_gear.set_position(cmd);
-            gcs().send_text(MAV_SEVERITY_INFO, "LandingGear: %s", cmd==AP_LandingGear::LandingGear_Retract?"RETRACT":"DEPLOY");
-        }
-        gear.last_cmd = (int8_t)cmd;
-    }
-}
-
-/*
   setup landing gear state
  */
 void Plane::set_landing_gear(void)
 {
-    if (control_mode == &mode_auto && hal.util->get_soft_armed() && is_flying()) {
-        AP_LandingGear::LandingGearCommand cmd = (AP_LandingGear::LandingGearCommand)gear.last_auto_cmd;
+    if (control_mode == &mode_auto && hal.util->get_soft_armed() && is_flying() && gear.last_flight_stage != flight_stage) {
         switch (flight_stage) {
         case AP_Vehicle::FixedWing::FLIGHT_LAND:
-            cmd = AP_LandingGear::LandingGear_Deploy;
+            g2.landing_gear.deploy_for_landing();
             break;
         case AP_Vehicle::FixedWing::FLIGHT_NORMAL:
-            cmd = AP_LandingGear::LandingGear_Retract;
-            break;
-        case AP_Vehicle::FixedWing::FLIGHT_VTOL:
-            if (quadplane.is_vtol_land(mission.get_current_nav_cmd().id)) {
-                cmd = AP_LandingGear::LandingGear_Deploy;
-            }
+            g2.landing_gear.retract_after_takeoff();
             break;
         default:
             break;
         }
-        if (cmd != gear.last_auto_cmd) {
-            gear.last_auto_cmd = (int8_t)cmd;
-            change_landing_gear(cmd);
-        }
     }
+    gear.last_flight_stage = flight_stage;
 }
 #endif // LANDING_GEAR_ENABLED
 

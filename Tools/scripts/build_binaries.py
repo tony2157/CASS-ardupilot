@@ -117,7 +117,11 @@ is bob we will attempt to checkout bob-AVR'''
         if ctag == "latest":
             vtag = "master"
         else:
-            vtag = "%s-%s" % (vehicle, ctag)
+            tagvehicle = vehicle
+            if tagvehicle == "Rover":
+                # FIXME: Rover tags in git still named APMrover2 :-(
+                tagvehicle = "APMrover2"
+            vtag = "%s-%s" % (tagvehicle, ctag)
 
         branches = []
         if cframe is not None:
@@ -560,6 +564,7 @@ is bob we will attempt to checkout bob-AVR'''
                 "MatekF405-STD",
                 "MatekF405-Wing",
                 "MatekF765-Wing",
+                "MatekH743",
                 "OMNIBUSF7V2",
                 "sparky2",
                 "omnibusf4",
@@ -579,6 +584,7 @@ is bob we will attempt to checkout bob-AVR'''
                 "CUAVv5",
                 "CUAVv5Nano",
                 "CUAV-Nora",
+                "CUAV-X7",
                 "mRoX21",
                 "Pixracer",
                 "F4BY",
@@ -653,11 +659,11 @@ is bob we will attempt to checkout bob-AVR'''
         '''build Rover binaries'''
         boards = self.common_boards()
         self.build_vehicle(tag,
-                           "APMrover2",
+                           "Rover",
                            boards,
                            "Rover",
                            "ardurover",
-                           "APMrover2")
+                           "Rover")
 
     def build_ardusub(self, tag):
         '''build Sub binaries'''

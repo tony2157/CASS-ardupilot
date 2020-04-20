@@ -31,7 +31,7 @@ re_vehicles = re.compile(r"\s*//\s*@Vehicles\s*:\s*(.*)")
 class LoggerDocco(object):
 
     vehicle_map = {
-        "Rover": "APMrover2",
+        "Rover": "Rover",
         "Sub": "ArduSub",
         "Copter": "ArduCopter",
         "Plane": "ArduPlane",
@@ -157,6 +157,8 @@ class LoggerDocco(object):
                     new_doccos.append(tmpdocco)
             else:
                 new_doccos.append(docco)
+        new_doccos = sorted(new_doccos, key=lambda x : x.name)
+
         for emitter in self.emitters:
             emitter.emit(new_doccos)
 
