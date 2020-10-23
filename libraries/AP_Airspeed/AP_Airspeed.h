@@ -153,11 +153,17 @@ public:
         TYPE_I2C_DLVR_5IN=7,
         TYPE_UAVCAN=8,
         TYPE_I2C_DLVR_10IN=9,
+        TYPE_I2C_DLVR_20IN=10,
+        TYPE_I2C_DLVR_30IN=11,
+        TYPE_I2C_DLVR_60IN=12,
     };
 
     // get current primary sensor
     uint8_t get_primary(void) const { return primary; }
 
+    // get number of sensors
+    uint8_t get_num_sensors(void) const { return num_sensors; }
+    
     static AP_Airspeed *get_singleton() { return _singleton; }
 
     // return the current corrected pressure, public for AP_Periph
@@ -193,17 +199,17 @@ private:
         float	last_pressure;
         float   filtered_pressure;
         float	corrected_pressure;
-        bool	healthy:1;
-        bool	hil_set:1;
         float   hil_pressure;
         uint32_t last_update_ms;
         bool use_zero_offset;
+        bool	healthy;
+        bool	hil_set;
 
         // state of runtime calibration
         struct {
             uint32_t start_ms;
-            uint16_t count;
             float    sum;
+            uint16_t count;
             uint16_t read_count;
         } cal;
 
@@ -223,7 +229,8 @@ private:
 
     // current primary sensor
     uint8_t primary;
-    
+    uint8_t num_sensors;
+
     void read(uint8_t i);
     // return the differential pressure in Pascal for the last airspeed reading for the requested instance
     // returns 0 if the sensor is not enabled

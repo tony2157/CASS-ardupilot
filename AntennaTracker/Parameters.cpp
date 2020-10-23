@@ -269,10 +269,10 @@ const AP_Param::Info Tracker::var_info[] = {
     // @Path: ../libraries/AP_BoardConfig/AP_BoardConfig.cpp
     GOBJECT(BoardConfig,            "BRD_",       AP_BoardConfig),
 
-#if HAL_WITH_UAVCAN
+#if HAL_MAX_CAN_PROTOCOL_DRIVERS
     // @Group: CAN_
-    // @Path: ../libraries/AP_BoardConfig/AP_BoardConfig_CAN.cpp
-    GOBJECT(BoardConfig_CAN,        "CAN_",       AP_BoardConfig_CAN),
+    // @Path: ../libraries/AP_CANManager/AP_CANManager.cpp
+    GOBJECT(can_mgr,        "CAN_",       AP_CANManager),
 #endif
 
     // GPS driver
@@ -477,9 +477,21 @@ const AP_Param::Info Tracker::var_info[] = {
     // @Path: ../libraries/AP_Stats/AP_Stats.cpp
     GOBJECT(stats, "STAT",  AP_Stats),
 
+    // @Param: AUTO_OPTIONS
+    // @DisplayName: Auto mode options
+    // @Description: 1: Scan for unknown target
+    // @User: Standard
+    // @Values: 0:None, 1: Scan for unknown target in auto mode
+    // @Bitmask: 0:Scan for unknown target
+    GSCALAR(auto_opts,              "AUTO_OPTIONS",        0),
+
     // @Group:
     // @Path: ../libraries/AP_Vehicle/AP_Vehicle.cpp
     { AP_PARAM_GROUP, "", Parameters::k_param_vehicle, (const void *)&tracker, {group_info : AP_Vehicle::var_info} },
+
+    // @Group: LOG
+    // @Path: ../libraries/AP_Logger/AP_Logger.cpp
+    GOBJECT(logger,           "LOG",  AP_Logger),
 
     AP_VAREND
 };

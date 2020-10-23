@@ -556,12 +556,67 @@ uint32_t UARTDriver::available() {
     return _readbuf.available();
 }
 
+uint32_t UARTDriver::available_locked(uint32_t key)
+{
+    if (lock_read_key != 0 && key != lock_read_key) {
+        return -1;
+    }
+    if (sdef.is_usb) {
+#ifdef HAVE_USB_SERIAL
+
+        if (((SerialUSBDriver*)sdef.serial)->config->usbp->state != USB_ACTIVE) {
+            return 0;
+        }
+#endif
+    }
+    return _readbuf.available();
+}
+
 uint32_t UARTDriver::txspace()
 {
     if (!_initialised) {
         return 0;
     }
     return _writebuf.space();
+}
+
+bool UARTDriver::discard_input()
+{
+    if (lock_read_key != 0 || _uart_owner_thd != chThdGetSelfX()){
+        return false;
+    }
+    if (!_initialised) {
+        return false;
+    }
+
+    _readbuf.clear();
+
+    if (!_rts_is_active) {
+        update_rts_line();
+    }
+
+    return true;
+}
+
+ssize_t UARTDriver::read(uint8_t *buffer, uint16_t count)
+{
+    if (lock_read_key != 0 || _uart_owner_thd != chThdGetSelfX()){
+        return -1;
+    }
+    if (!_initialised) {
+        return -1;
+    }
+
+    const uint32_t ret = _readbuf.read(buffer, count);
+    if (ret == 0) {
+        return 0;
+    }
+
+    if (!_rts_is_active) {
+        update_rts_line();
+    }
+
+    return ret;
 }
 
 int16_t UARTDriver::read()
@@ -747,7 +802,8 @@ void UARTDriver::handle_tx_timeout(void *arg)
     chSysLockFromISR();
     if (!uart_drv->tx_bounce_buf_ready) {
         dmaStreamDisable(uart_drv->txdma);
-        uart_drv->tx_len -= dmaStreamGetTransactionSize(uart_drv->txdma);
+        const uint32_t tx_size = dmaStreamGetTransactionSize(uart_drv->txdma);
+        uart_drv->tx_len -= MIN(uart_drv->tx_len, tx_size);
         uart_drv->tx_bounce_buf_ready = true;
         uart_drv->dma_handle->unlock_from_IRQ();
     }
@@ -790,6 +846,7 @@ void UARTDriver::write_pending_bytes_DMA(uint32_t n)
         }
     }
 
+    chSysLock();
     dmaStreamDisable(txdma);
     tx_bounce_buf_ready = false;
     osalDbgAssert(txdma != nullptr, "UART TX DMA allocation failed");
@@ -803,7 +860,8 @@ void UARTDriver::write_pending_bytes_DMA(uint32_t n)
                      STM32_DMA_CR_MINC | STM32_DMA_CR_TCIE);
     dmaStreamEnable(txdma);
     uint32_t timeout_us = ((1000000UL * (tx_len+2) * 10) / _baudrate) + 500;
-    chVTSet(&tx_timeout, chTimeUS2I(timeout_us), handle_tx_timeout, this);
+    chVTSetI(&tx_timeout, chTimeUS2I(timeout_us), handle_tx_timeout, this);
+    chSysUnlock();
 }
 #endif // HAL_UART_NODMA
 

@@ -257,6 +257,14 @@ void Sub::Log_Write_GuidedTarget(uint8_t target_type, const Vector3f& pos_target
 // @Field: DCRt: desired climb rate
 // @Field: CRt: climb rate
 
+// @LoggerMessage: MOTB
+// @Description: Battery information
+// @Field: TimeUS: Time since system startup
+// @Field: LiftMax: Maximum motor compensation gain
+// @Field: BatVolt: Ratio betwen detected battery voltage and maximum battery voltage
+// @Field: BatRes: Estimated battery resistance
+// @Field: ThLimit: Throttle limit set due to battery current limitations
+
 // @LoggerMessage: D16
 // @Description: Generic 16-bit-signed-integer storage
 // @Field: TimeUS: Time since system startup
@@ -286,6 +294,17 @@ void Sub::Log_Write_GuidedTarget(uint8_t target_type, const Vector3f& pos_target
 // @Field: TimeUS: Time since system startup
 // @Field: Id: Data type identifier
 // @Field: Value: Value
+
+// @LoggerMessage: GUID
+// @Description: Guided mode target information
+// @Field: TimeUS: Time since system startup
+// @Field: Type: Type of guided mode
+// @Field: pX: Target position, X-Axis
+// @Field: pY: Target position, Y-Axis
+// @Field: pZ: Target position, Z-Axis
+// @Field: vX: Target velocity, X-Axis
+// @Field: vY: Target velocity, Y-Axis
+// @Field: vZ: Target velocity, Z-Axis
 
 // type and unit information can be found in
 // libraries/AP_Logger/Logstructure.h; search for "log_Units" for
@@ -330,11 +349,11 @@ void Sub::Log_Write_Control_Tuning() {}
 void Sub::Log_Write_Performance() {}
 void Sub::Log_Write_Attitude(void) {}
 void Sub::Log_Write_MotBatt() {}
-void Sub::Log_Write_Data(uint8_t id, int32_t value) {}
-void Sub::Log_Write_Data(uint8_t id, uint32_t value) {}
-void Sub::Log_Write_Data(uint8_t id, int16_t value) {}
-void Sub::Log_Write_Data(uint8_t id, uint16_t value) {}
-void Sub::Log_Write_Data(uint8_t id, float value) {}
+void Sub::Log_Write_Data(LogDataID id, int32_t value) {}
+void Sub::Log_Write_Data(LogDataID id, uint32_t value) {}
+void Sub::Log_Write_Data(LogDataID id, int16_t value) {}
+void Sub::Log_Write_Data(LogDataID id, uint16_t value) {}
+void Sub::Log_Write_Data(LogDataID id, float value) {}
 void Sub::Log_Sensor_Health() {}
 void Sub::Log_Write_GuidedTarget(uint8_t target_type, const Vector3f& pos_target, const Vector3f& vel_target) {}
 void Sub::Log_Write_Vehicle_Startup_Messages() {}

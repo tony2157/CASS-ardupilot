@@ -191,7 +191,7 @@ const AP_Param::GroupInfo AC_PosControl::var_info[] = {
 
     // @Param: _VELXY_D_FILT
     // @DisplayName: Velocity (horizontal) input filter
-    // @Description: Velocity (horizontal) input filter.  This filter (in hz) is applied to the input for P and I terms
+    // @Description: Velocity (horizontal) input filter.  This filter (in hz) is applied to the input for D term
     // @Range: 0 100
     // @Units: Hz
     // @User: Advanced
@@ -891,47 +891,11 @@ float AC_PosControl::time_since_last_xy_update() const
 // write log to dataflash
 void AC_PosControl::write_log()
 {
-    const Vector3f &pos_target = get_pos_target();
-    const Vector3f &vel_target = get_vel_target();
-    const Vector3f &accel_target = get_accel_target();
-    const Vector3f &position = _inav.get_position();
-    const Vector3f &velocity = _inav.get_velocity();
     float accel_x, accel_y;
     lean_angles_to_accel(accel_x, accel_y);
 
-// @LoggerMessage: PSC
-// @Description: Position Control data
-// @Field: TimeUS: Time since system startup
-// @Field: TPX: Target position relative to origin, X-axis
-// @Field: TPY: Target position relative to origin, Y-axis
-// @Field: PX: Position relative to origin, X-axis
-// @Field: PY: Position relative to origin, Y-axis
-// @Field: TVX: Target velocity, X-axis
-// @Field: TVY: Target velocity, Y-axis
-// @Field: VX: Velocity, X-axis
-// @Field: VY: Velocity, Y-axis
-// @Field: TAX: Target acceleration, X-axis
-// @Field: TAY: Target acceleration, Y-axis
-// @Field: AX: Acceleration, X-axis
-// @Field: AY: Acceleration, Y-axis
-    AP::logger().Write("PSC",
-                       "TimeUS,TPX,TPY,PX,PY,TVX,TVY,VX,VY,TAX,TAY,AX,AY",
-                       "smmmmnnnnoooo",
-                       "F000000000000",
-                       "Qffffffffffff",
-                       AP_HAL::micros64(),
-                       double(pos_target.x * 0.01f),
-                       double(pos_target.y * 0.01f),
-                       double(position.x * 0.01f),
-                       double(position.y * 0.01f),
-                       double(vel_target.x * 0.01f),
-                       double(vel_target.y * 0.01f),
-                       double(velocity.x * 0.01f),
-                       double(velocity.y * 0.01f),
-                       double(accel_target.x * 0.01f),
-                       double(accel_target.y * 0.01f),
-                       double(accel_x * 0.01f),
-                       double(accel_y * 0.01f));
+   AP::logger().Write_PSC(get_pos_target(), _inav.get_position(), get_vel_target(), _inav.get_velocity(), get_accel_target(), accel_x, accel_y);
+
 }
 
 /// init_vel_controller_xyz - initialise the velocity controller - should be called once before the caller attempts to use the controller
@@ -966,45 +930,13 @@ void AC_PosControl::init_vel_controller_xyz()
     init_ekf_z_reset();
 }
 
-/// update_velocity_controller_xy - run the velocity controller - should be called at 100hz or higher
-///     velocity targets should we set using set_desired_velocity_xy() method
-///     callers should use get_roll() and get_pitch() methods and sent to the attitude controller
-///     throttle targets will be sent directly to the motors
-void AC_PosControl::update_vel_controller_xy()
-{
-    // capture time since last iteration
-    const uint64_t now_us = AP_HAL::micros64();
-    float dt = (now_us - _last_update_xy_us) * 1.0e-6f;
-
-    // sanity check dt
-    if (dt >= 0.2f) {
-        dt = 0.0f;
-    }
-
-    // check for ekf xy position reset
-    check_for_ekf_xy_reset();
-
-    // check if xy leash needs to be recalculated
-    calc_leash_length_xy();
-
-    // apply desired velocity request to position target
-    // TODO: this will need to be removed and added to the calling function.
-    desired_vel_to_pos(dt);
-
-    // run position controller
-    run_xy_controller(dt);
-
-    // update xy update time
-    _last_update_xy_us = now_us;
-}
-
 /// update_velocity_controller_xyz - run the velocity controller - should be called at 100hz or higher
 ///     velocity targets should we set using set_desired_velocity_xyz() method
 ///     callers should use get_roll() and get_pitch() methods and sent to the attitude controller
 ///     throttle targets will be sent directly to the motors
 void AC_PosControl::update_vel_controller_xyz()
 {
-    update_vel_controller_xy();
+    update_xy_controller();
 
     // update altitude target
     set_alt_target_from_climb_rate_ff(_vel_desired.z, _dt, false);

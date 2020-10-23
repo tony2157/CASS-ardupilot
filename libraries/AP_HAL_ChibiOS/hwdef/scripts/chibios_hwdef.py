@@ -99,6 +99,9 @@ baro_list = []
 
 all_lines = []
 
+# map from uart names to SERIALn numbers
+uart_serial_num = {}
+
 mcu_type = None
 dual_USB_enabled = False
 
@@ -534,12 +537,14 @@ class generic_pin(object):
                                   str)
 
 
-def get_config(name, column=0, required=True, default=None, type=None, spaces=False):
+def get_config(name, column=0, required=True, default=None, type=None, spaces=False, aslist=False):
     '''get a value from config dictionary'''
     if name not in config:
         if required and default is None:
             error("missing required value %s in hwdef.dat" % name)
         return default
+    if aslist:
+        return config[name]
     if len(config[name]) < column + 1:
         if not required:
             return None
@@ -586,10 +591,10 @@ def make_line(label):
     return line
 
 
-def enable_can(f):
+def enable_can(f, num_ifaces):
     '''setup for a CAN enabled board'''
-    f.write('#define HAL_WITH_UAVCAN 1\n')
-    env_vars['HAL_WITH_UAVCAN'] = '1'
+    f.write('#define HAL_NUM_CAN_IFACES %d\n' % num_ifaces)
+    env_vars['HAL_NUM_CAN_IFACES'] = str(num_ifaces)
 
 
 def has_sdcard_spi():
@@ -643,8 +648,6 @@ def write_mcu_config(f):
         f.write('#define HAL_USE_SERIAL_USB TRUE\n')
     if 'OTG2' in bytype:
         f.write('#define STM32_USB_USE_OTG2                  TRUE\n')
-    if have_type_prefix('CAN') and 'AP_PERIPH' not in env_vars:
-        enable_can(f)
 
     if get_config('PROCESS_STACK', required=False):
         env_vars['PROCESS_STACK'] = get_config('PROCESS_STACK')
@@ -667,11 +670,20 @@ def write_mcu_config(f):
         env_vars['PERIPH_FW'] = 0
 
     # write any custom STM32 defines
+    using_chibios_can = False
     for d in alllines:
         if d.startswith('STM32_'):
             f.write('#define %s\n' % d)
         if d.startswith('define '):
+            if 'HAL_USE_CAN' in d:
+                using_chibios_can = True
             f.write('#define %s\n' % d[7:])
+
+    if have_type_prefix('CAN') and not using_chibios_can:
+        if 'CAN1' in bytype and 'CAN2' in bytype:
+            enable_can(f, 2)
+        else:
+            enable_can(f, 1)
     flash_size = get_config('FLASH_SIZE_KB', type=int)
     f.write('#define BOARD_FLASH_SIZE %u\n' % flash_size)
     env_vars['BOARD_FLASH_SIZE'] = flash_size
@@ -684,6 +696,8 @@ def write_mcu_config(f):
     if args.bootloader:
         f.write('#define FLASH_BOOTLOADER_LOAD_KB %u\n' % get_config('FLASH_BOOTLOADER_LOAD_KB', type=int))
         f.write('#define FLASH_RESERVE_END_KB %u\n' % get_config('FLASH_RESERVE_END_KB', default=0, type=int))
+        f.write('#define APP_START_OFFSET_KB %u\n' % get_config('APP_START_OFFSET_KB', default=0, type=int))
+
     f.write('\n')
 
     ram_map = get_mcu_config('RAM_MAP', True)
@@ -724,6 +738,9 @@ def write_mcu_config(f):
         cortex = "cortex-m4"
         env_vars['CPU_FLAGS'] = ["-mcpu=%s" % cortex, "-mfpu=fpv4-sp-d16", "-mfloat-abi=hard"]
         build_info['MCU'] = cortex
+
+    if get_mcu_config('EXPECTED_CLOCK'):
+        f.write('#define HAL_EXPECTED_SYSCLOCK %u\n' % get_mcu_config('EXPECTED_CLOCK'))
 
     env_vars['CORTEX'] = cortex
 
@@ -771,9 +788,15 @@ def write_mcu_config(f):
 #define CH_CFG_USE_MEMCORE FALSE
 #define HAL_USE_I2C FALSE
 #define HAL_USE_PWM FALSE
+#define CH_DBG_ENABLE_STACK_CHECK FALSE
 ''')
     if env_vars.get('ROMFS_UNCOMPRESSED', False):
         f.write('#define HAL_ROMFS_UNCOMPRESSED\n')
+
+    if 'AP_PERIPH' in env_vars:
+        f.write('''
+#define CH_DBG_ENABLE_STACK_CHECK FALSE
+''')
 
 
 def write_ldscript(fname):
@@ -800,6 +823,8 @@ def write_ldscript(fname):
         flash_length = flash_size - (flash_reserve_start + flash_reserve_end)
     else:
         flash_length = get_config('FLASH_BOOTLOADER_LOAD_KB', type=int)
+
+    env_vars['FLASH_TOTAL'] = flash_length * 1024
 
     print("Generating ldscript.ld")
     f = open(fname, 'w')
@@ -894,7 +919,9 @@ def write_SPI_table(f):
                mode, lowspeed, highspeed))
         devlist.append('HAL_SPI_DEVICE%u' % devidx)
     f.write('#define HAL_SPI_DEVICE_LIST %s\n\n' % ','.join(devlist))
-
+    for dev in spidev:
+        f.write("#define HAL_WITH_SPI_%s 1\n" % dev[0].upper().replace("-","_"))
+    f.write("\n")
 
 def write_SPI_config(f):
     '''write SPI config defines'''
@@ -1071,13 +1098,32 @@ def get_extra_bylabel(label, name, default=None):
         return default
     return p.extra_value(name, type=str, default=default)
 
+def get_UART_ORDER():
+    '''get UART_ORDER from SERIAL_ORDER option'''
+    if get_config('UART_ORDER', required=False, aslist=True) is not None:
+        error('Please convert UART_ORDER to SERIAL_ORDER')
+    serial_order = get_config('SERIAL_ORDER', required=False, aslist=True)
+    if serial_order is None:
+        return None
+    if args.bootloader:
+        # in bootloader SERIAL_ORDER is treated the same as UART_ORDER
+        return serial_order
+    map = [ 0, 3, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12 ]
+    while len(serial_order) < 4:
+        serial_order += ['EMPTY']
+    uart_order = []
+    global uart_serial_num
+    for i in range(len(serial_order)):
+        uart_order.append(serial_order[map[i]])
+        uart_serial_num[serial_order[i]] = i
+    return uart_order
 
 def write_UART_config(f):
     '''write UART config defines'''
     global dual_USB_enabled
-    if get_config('UART_ORDER', required=False) is None:
+    uart_list = get_UART_ORDER()
+    if uart_list is None:
         return
-    uart_list = config['UART_ORDER']
     f.write('\n// UART configuration\n')
 
     # write out driver declarations for HAL_ChibOS_Class.cpp
@@ -1136,6 +1182,8 @@ def write_UART_config(f):
         rts_line = make_line(dev + '_RTS')
         if rts_line != "0":
             have_rts_cts = True
+            f.write('#define HAL_HAVE_RTSCTS_SERIAL%u\n' % uart_serial_num[dev])
+
         if dev.startswith('OTG2'):
             f.write(
                 '#define HAL_%s_CONFIG {(BaseSequentialStream*) &SDU2, true, false, 0, 0, false, 0, 0}\n'
@@ -1167,7 +1215,7 @@ def write_UART_config(f):
     if OTG2_index is not None:
         f.write('#define HAL_OTG2_UART_INDEX %d\n' % OTG2_index)
         f.write('''
-#if HAL_WITH_UAVCAN
+#if HAL_NUM_CAN_IFACES
 #ifndef HAL_OTG2_PROTOCOL
 #define HAL_OTG2_PROTOCOL SerialProtocol_SLCAN
 #endif
@@ -1194,9 +1242,9 @@ def write_UART_config(f):
 
 def write_UART_config_bootloader(f):
     '''write UART config defines'''
-    if get_config('UART_ORDER', required=False) is None:
+    uart_list = get_UART_ORDER()
+    if uart_list is None:
         return
-    uart_list = config['UART_ORDER']
     f.write('\n// UART configuration\n')
     devlist = []
     have_uart = False
@@ -1211,7 +1259,8 @@ def write_UART_config_bootloader(f):
             unum = int(u[-1])
             devlist.append('(BaseChannel *)&SD%u' % unum)
             have_uart = True
-    f.write('#define BOOTLOADER_DEV_LIST %s\n' % ','.join(devlist))
+    if len(devlist) > 0:
+        f.write('#define BOOTLOADER_DEV_LIST %s\n' % ','.join(devlist))
     if OTG2_index is not None:
         f.write('#define HAL_OTG2_UART_INDEX %d\n' % OTG2_index)
     if not have_uart:
@@ -1467,7 +1516,7 @@ def write_ADC_config(f):
             f.write('#define HAL_HAVE_SERVO_VOLTAGE 1\n')
         adc_chans.append((chan, scale, p.label, p.portpin))
     adc_chans = sorted(adc_chans)
-    vdd = get_config('STM32_VDD')
+    vdd = get_config('STM32_VDD', default='330U')
     if vdd[-1] == 'U':
         vdd = vdd[:-1]
     vdd = float(vdd) * 0.01
@@ -1615,8 +1664,7 @@ def write_all_lines(hwdat):
     f = open(hwdat, 'w')
     f.write('\n'.join(all_lines))
     f.close()
-    flash_size = get_config('FLASH_SIZE_KB', type=int)
-    if flash_size > 1024:
+    if not 'AP_PERIPH' in env_vars:
         romfs["hwdef.dat"] = hwdat
 
 def write_hwdef_header(outfilename):
@@ -1947,11 +1995,8 @@ def process_line(line):
                 alllines.remove(line)
         newpins = []
         for pin in allpins:
-            if pin.type == a[1]:
-                continue
-            if pin.label == a[1]:
-                continue
-            if pin.portpin == a[1]:
+            if pin.type == a[1] or pin.label == a[1] or pin.portpin == a[1]:
+                portmap[pin.port][pin.pin] = generic_pin(pin.port, pin.pin, None, 'INPUT', [])
                 continue
             newpins.append(pin)
         allpins = newpins

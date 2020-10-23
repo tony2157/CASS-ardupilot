@@ -50,7 +50,7 @@ MAV_MODE GCS_MAVLINK_Rover::base_mode() const
     // indicate we have set a custom mode
     _base_mode |= MAV_MODE_FLAG_CUSTOM_MODE_ENABLED;
 
-return (MAV_MODE)_base_mode;
+    return (MAV_MODE)_base_mode;
 }
 
 uint32_t GCS_Rover::custom_mode() const
@@ -184,7 +184,6 @@ void GCS_MAVLINK_Rover::send_pid_tuning()
 {
     Parameters &g = rover.g;
     ParametersG2 &g2 = rover.g2;
-    const AP_AHRS &ahrs = AP::ahrs();
 
     const AP_Logger::PID_Info *pid_info;
 
@@ -193,7 +192,7 @@ void GCS_MAVLINK_Rover::send_pid_tuning()
         pid_info = &g2.attitude_control.get_steering_rate_pid().get_pid_info();
         mavlink_msg_pid_tuning_send(chan, PID_TUNING_STEER,
                                     degrees(pid_info->target),
-                                    degrees(ahrs.get_yaw_rate_earth()),
+                                    degrees(pid_info->actual),
                                     pid_info->FF,
                                     pid_info->P,
                                     pid_info->I,
@@ -206,12 +205,10 @@ void GCS_MAVLINK_Rover::send_pid_tuning()
     // speed to throttle PID
     if (g.gcs_pid_mask & 2) {
         pid_info = &g2.attitude_control.get_throttle_speed_pid().get_pid_info();
-        float speed = 0.0f;
-        g2.attitude_control.get_forward_speed(speed);
         mavlink_msg_pid_tuning_send(chan, PID_TUNING_ACCZ,
                                     pid_info->target,
-                                    speed,
-                                    0,
+                                    pid_info->actual,
+                                    pid_info->FF,
                                     pid_info->P,
                                     pid_info->I,
                                     pid_info->D);
@@ -225,7 +222,7 @@ void GCS_MAVLINK_Rover::send_pid_tuning()
         pid_info = &g2.attitude_control.get_pitch_to_throttle_pid().get_pid_info();
         mavlink_msg_pid_tuning_send(chan, PID_TUNING_PITCH,
                                     degrees(pid_info->target),
-                                    degrees(ahrs.pitch),
+                                    degrees(pid_info->actual),
                                     pid_info->FF,
                                     pid_info->P,
                                     pid_info->I,
@@ -297,6 +294,7 @@ uint8_t GCS_MAVLINK_Rover::sysid_my_gcs() const
 {
     return rover.g.sysid_my_gcs;
 }
+
 bool GCS_MAVLINK_Rover::sysid_enforce() const
 {
     return rover.g2.sysid_enforce;
@@ -492,7 +490,6 @@ static const ap_message STREAM_EXTRA1_msgs[] = {
     MSG_ATTITUDE,
     MSG_SIMSTATE,
     MSG_AHRS2,
-    MSG_AHRS3,
     MSG_PID_TUNING,
 };
 static const ap_message STREAM_EXTRA2_msgs[] = {
@@ -589,6 +586,7 @@ MAV_RESULT GCS_MAVLINK_Rover::_handle_command_preflight_calibration(const mavlin
 bool GCS_MAVLINK_Rover::set_home_to_current_location(bool _lock) {
     return rover.set_home_to_current_location(_lock);
 }
+
 bool GCS_MAVLINK_Rover::set_home(const Location& loc, bool _lock) {
     return rover.set_home(loc, _lock);
 }
@@ -604,6 +602,9 @@ MAV_RESULT GCS_MAVLINK_Rover::handle_command_int_packet(const mavlink_command_in
             return MAV_RESULT_FAILED;
         }
         return MAV_RESULT_ACCEPTED;
+
+    case MAV_CMD_DO_REPOSITION:
+        return handle_command_int_do_reposition(packet);
 
     case MAV_CMD_DO_SET_REVERSE:
         // param1 : Direction (0=Forward, 1=Reverse)
@@ -682,6 +683,54 @@ MAV_RESULT GCS_MAVLINK_Rover::handle_command_long_packet(const mavlink_command_l
     }
 }
 
+MAV_RESULT GCS_MAVLINK_Rover::handle_command_int_do_reposition(const mavlink_command_int_t &packet)
+{
+    const bool change_modes = ((int32_t)packet.param2 & MAV_DO_REPOSITION_FLAGS_CHANGE_MODE) == MAV_DO_REPOSITION_FLAGS_CHANGE_MODE;
+    if (!rover.control_mode->in_guided_mode() && !change_modes) {
+        return MAV_RESULT_DENIED;
+    }
+
+    // sanity check location
+    if (!check_latlng(packet.x, packet.y)) {
+        return MAV_RESULT_DENIED;
+    }
+    if (packet.x == 0 && packet.y == 0) {
+        return MAV_RESULT_DENIED;
+    }
+
+    Location request_location {};
+    request_location.lat = packet.x;
+    request_location.lng = packet.y;
+
+    if (fabsf(packet.z) > LOCATION_ALT_MAX_M) {
+        return MAV_RESULT_DENIED;
+    }
+
+    Location::AltFrame frame;
+    if (!mavlink_coordinate_frame_to_location_alt_frame((MAV_FRAME)packet.frame, frame)) {
+        return MAV_RESULT_DENIED; // failed as the location is not valid
+    }
+    request_location.set_alt_cm((int32_t)(packet.z * 100.0f), frame);
+
+    if (!rover.control_mode->in_guided_mode()) {
+        if (!rover.set_mode(Mode::Number::GUIDED, ModeReason::GCS_COMMAND)) {
+            return MAV_RESULT_FAILED;
+        }
+    }
+
+    if (is_positive(packet.param1)) {
+        if (!rover.control_mode->set_desired_speed(packet.param1)) {
+            return MAV_RESULT_FAILED;
+        }
+    }
+
+    // set the destination
+    if (!rover.mode_guided.set_desired_location(request_location)) {
+        return MAV_RESULT_FAILED;
+    }
+
+    return MAV_RESULT_ACCEPTED;
+}
 
 // a RC override message is considered to be a 'heartbeat' from the ground station for failsafe purposes
 void GCS_MAVLINK_Rover::handle_rc_channels_override(const mavlink_message_t &msg)
@@ -690,13 +739,9 @@ void GCS_MAVLINK_Rover::handle_rc_channels_override(const mavlink_message_t &msg
     GCS_MAVLINK::handle_rc_channels_override(msg);
 }
 
-
 void GCS_MAVLINK_Rover::handleMessage(const mavlink_message_t &msg)
 {
     switch (msg.msgid) {
-
-    
-
     case MAVLINK_MSG_ID_MANUAL_CONTROL:
     {
         if (msg.sysid != rover.g.sysid_my_gcs) {  // Only accept control from our gcs
@@ -773,6 +818,12 @@ void GCS_MAVLINK_Rover::handleMessage(const mavlink_message_t &msg)
                 break;
             }
 
+            // need ekf origin
+            Location ekf_origin;
+            if (!rover.ahrs.get_origin(ekf_origin)) {
+                break;
+            }
+
             // check for supported coordinate frames
             if (packet.coordinate_frame != MAV_FRAME_LOCAL_NED &&
                 packet.coordinate_frame != MAV_FRAME_LOCAL_OFFSET_NED &&
@@ -806,9 +857,10 @@ void GCS_MAVLINK_Rover::handleMessage(const mavlink_message_t &msg)
                     target_loc.offset(packet.x, packet.y);
                     break;
 
+                case MAV_FRAME_LOCAL_NED:
                 default:
-                    // MAV_FRAME_LOCAL_NED interpret as an offset from home
-                    target_loc = rover.ahrs.get_home();
+                    // MAV_FRAME_LOCAL_NED is interpreted as an offset from EKF origin
+                    target_loc = ekf_origin;
                     target_loc.offset(packet.x, packet.y);
                     break;
                 }

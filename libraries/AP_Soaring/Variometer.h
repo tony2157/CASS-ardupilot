@@ -16,20 +16,14 @@ Manages the estimation of aircraft total energy, drag and vertical air velocity.
 
 class Variometer {
 
-    AP_AHRS &_ahrs;
     const AP_Vehicle::FixedWing &_aparm;
 
     // store time of last update
     uint64_t _prev_update_time;
 
-    float _last_alt;
-
     float _aspd_filt;
     float _aspd_filt_constrained;
 
-    float _last_aspd;
-    float _last_roll;
-    float _last_total_E;
     float _expected_thermalling_sink;
 
     // declares a 5point average filter using floats
@@ -43,7 +37,7 @@ class Variometer {
     LowPassFilter<float> _vdot_filter2;
 
 public:
-    Variometer(AP_AHRS &ahrs, const AP_Vehicle::FixedWing &parms);
+    Variometer(const AP_Vehicle::FixedWing &parms);
     float alt;
     float reading;
     float filtered_reading;

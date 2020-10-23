@@ -107,7 +107,8 @@ void GCS_MAVLINK_Sub::send_scaled_pressure3()
         AP_HAL::millis(),
         0,
         0,
-        sub.celsius.temperature() * 100);
+        sub.celsius.temperature() * 100,
+        0); // TODO: use differential pressure temperature
 }
 
 bool GCS_MAVLINK_Sub::send_info()
@@ -353,7 +354,6 @@ static const ap_message STREAM_EXTRA1_msgs[] = {
     MSG_ATTITUDE,
     MSG_SIMSTATE,
     MSG_AHRS2,
-    MSG_AHRS3,
     MSG_PID_TUNING
 };
 static const ap_message STREAM_EXTRA2_msgs[] = {

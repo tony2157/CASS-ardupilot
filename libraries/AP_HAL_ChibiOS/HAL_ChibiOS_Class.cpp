@@ -103,6 +103,9 @@ static ChibiOS::Flash flashDriver;
 static Empty::Flash flashDriver;
 #endif
 
+#if HAL_NUM_CAN_IFACES > 0
+static ChibiOS::CANIface* canDrivers[HAL_NUM_CAN_IFACES];
+#endif
 
 #if HAL_WITH_IO_MCU
 HAL_UART_IO_DRIVER;
@@ -133,7 +136,11 @@ HAL_ChibiOS::HAL_ChibiOS() :
         &opticalFlowDriver,
         &flashDriver,
         &dspDriver,
+#if HAL_NUM_CAN_IFACES
+        (AP_HAL::CANIface**)canDrivers
+#else
         nullptr
+#endif
         )
 {}
 
@@ -222,22 +229,7 @@ static void main_loop()
 
 #ifndef HAL_NO_LOGGING
     if (hal.util->was_watchdog_reset()) {
-        AP::internalerror().error(AP_InternalError::error_t::watchdog_reset);
-        const AP_HAL::Util::PersistentData &pd = hal.util->last_persistent_data;
-        AP::logger().WriteCritical("WDOG", "TimeUS,Tsk,IE,IEC,MvMsg,MvCmd,SmLn,FL,FT,FA,FP,ICSR,LR", "QbIIHHHHHIBII",
-                                   AP_HAL::micros64(),
-                                   pd.scheduler_task,
-                                   pd.internal_errors,
-                                   pd.internal_error_count,
-                                   pd.last_mavlink_msgid,
-                                   pd.last_mavlink_cmd,
-                                   pd.semaphore_line,
-                                   pd.fault_line,
-                                   pd.fault_type,
-                                   pd.fault_addr,
-                                   pd.fault_thd_prio,
-                                   pd.fault_icsr,
-                                   pd.fault_lr);
+        INTERNAL_ERROR(AP_InternalError::error_t::watchdog_reset);
     }
 #endif // HAL_NO_LOGGING
 #endif // IOMCU_FW

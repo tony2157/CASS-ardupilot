@@ -15,9 +15,6 @@ bool Plane::start_command(const AP_Mission::Mission_Command& cmd)
 
     // special handling for nav vs non-nav commands
     if (AP_Mission::is_nav_cmd(cmd)) {
-        // set land_complete to false to stop us zeroing the throttle
-        auto_state.sink_rate = 0;
-
         // set takeoff_complete to true so we don't add extra elevator
         // except in a takeoff
         auto_state.takeoff_complete = true;
@@ -75,7 +72,7 @@ bool Plane::start_command(const AP_Mission::Mission_Command& cmd)
         break;
 
     case MAV_CMD_NAV_RETURN_TO_LAUNCH:
-        set_mode(mode_rtl, ModeReason::UNKNOWN);
+        set_mode(mode_rtl, ModeReason::MISSION_CMD);
         break;
 
     case MAV_CMD_NAV_CONTINUE_AND_CHANGE_ALT:
@@ -155,7 +152,7 @@ bool Plane::start_command(const AP_Mission::Mission_Command& cmd)
         autotune_enable(cmd.p1);
         break;
 
-#if MOUNT == ENABLED
+#if HAL_MOUNT_ENABLED
     // Sets the region of interest (ROI) for a sensor set or the
     // vehicle itself. This can then be used by the vehicles control
     // system to control the vehicle attitude and the attitude of various
@@ -660,14 +657,8 @@ bool Plane::verify_nav_wp(const AP_Mission::Mission_Command& cmd)
 
 bool Plane::verify_loiter_unlim(const AP_Mission::Mission_Command &cmd)
 {
-    if (cmd.p1 <= 1 && abs(g.rtl_radius) > 1) {
-        // if mission radius is 0,1, and rtl_radius is valid, use rtl_radius.
-        loiter.direction = (g.rtl_radius < 0) ? -1 : 1;
-        update_loiter(abs(g.rtl_radius));
-    } else {
-        // else use mission radius
-        update_loiter(cmd.p1);
-    }
+    // else use mission radius
+    update_loiter(cmd.p1);
     return false;
 }
 
@@ -895,26 +886,30 @@ void Plane::do_loiter_at_location()
     next_WP_loc = current_loc;
 }
 
-void Plane::do_change_speed(const AP_Mission::Mission_Command& cmd)
+bool Plane::do_change_speed(const AP_Mission::Mission_Command& cmd)
 {
     switch (cmd.content.speed.speed_type)
     {
     case 0:             // Airspeed
-        if (cmd.content.speed.target_ms > 0) {
+        if ((cmd.content.speed.target_ms >= aparm.airspeed_min.get()) && (cmd.content.speed.target_ms <= aparm.airspeed_max.get()))  {
             aparm.airspeed_cruise_cm.set(cmd.content.speed.target_ms * 100);
             gcs().send_text(MAV_SEVERITY_INFO, "Set airspeed %u m/s", (unsigned)cmd.content.speed.target_ms);
+            return true;
         }
         break;
     case 1:             // Ground speed
         gcs().send_text(MAV_SEVERITY_INFO, "Set groundspeed %u", (unsigned)cmd.content.speed.target_ms);
         aparm.min_gndspeed_cm.set(cmd.content.speed.target_ms * 100);
-        break;
+        return true;
     }
 
     if (cmd.content.speed.throttle_pct > 0 && cmd.content.speed.throttle_pct <= 100) {
         gcs().send_text(MAV_SEVERITY_INFO, "Set throttle %u", (unsigned)cmd.content.speed.throttle_pct);
         aparm.throttle_cruise.set(cmd.content.speed.throttle_pct);
+        return true;
     }
+
+    return false;
 }
 
 void Plane::do_set_home(const AP_Mission::Mission_Command& cmd)

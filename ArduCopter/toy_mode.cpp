@@ -579,11 +579,11 @@ void ToyMode::update()
         break;
 
     case ACTION_TOGGLE_SIMPLE:
-        copter.set_simple_mode(copter.ap.simple_mode?0:1);
+        copter.set_simple_mode(bool(copter.simple_mode)?Copter::SimpleMode::NONE:Copter::SimpleMode::SIMPLE);
         break;
 
     case ACTION_TOGGLE_SSIMPLE:
-        copter.set_simple_mode(copter.ap.simple_mode?0:2);
+        copter.set_simple_mode(bool(copter.simple_mode)?Copter::SimpleMode::NONE:Copter::SimpleMode::SUPERSIMPLE);
         break;
         
     case ACTION_ARM_LAND_RTL:
@@ -907,15 +907,15 @@ void ToyMode::blink_update(void)
     if (copter.motors->armed() && AP_Notify::flags.failsafe_battery) {
         pattern = BLINK_8;
     } else if (!copter.motors->armed() && (blink_disarm > 0)) {
-		pattern = BLINK_8;
-		blink_disarm--;
-	} else {
+        pattern = BLINK_8;
+        blink_disarm--;
+    } else {
         pattern = BLINK_FULL;
     }
     
     if (copter.motors->armed()) {
-		blink_disarm = 4;
-	}
+        blink_disarm = 4;
+    }
     
     if (red_blink_count == 0) {
         red_blink_pattern = pattern;

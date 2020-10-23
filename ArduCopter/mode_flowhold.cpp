@@ -138,7 +138,7 @@ void ModeFlowHold::flowhold_flow_to_angle(Vector2f &bf_angles, bool stick_input)
     sensor_flow *= constrain_float(height_estimate, height_min, height_max);
 
     // rotate controller input to earth frame
-    Vector2f input_ef = copter.ahrs.rotate_body_to_earth2D(sensor_flow);
+    Vector2f input_ef = copter.ahrs.body_to_earth2D(sensor_flow);
 
     // run PI controller
     flow_pi_xy.set_input(input_ef);
@@ -194,7 +194,7 @@ void ModeFlowHold::flowhold_flow_to_angle(Vector2f &bf_angles, bool stick_input)
     ef_output *= copter.aparm.angle_max;
 
     // convert to body frame
-    bf_angles += copter.ahrs.rotate_earth_to_body2D(ef_output);
+    bf_angles += copter.ahrs.earth_to_body2D(ef_output);
 
     // set limited flag to prevent integrator windup
     limited = fabsf(bf_angles.x) > copter.aparm.angle_max || fabsf(bf_angles.y) > copter.aparm.angle_max;
@@ -286,7 +286,7 @@ void ModeFlowHold::run()
         takeoff.get_climb_rates(target_climb_rate, takeoff_climb_rate);
 
         // get avoidance adjusted climb rate
-        target_climb_rate = copter.get_avoidance_adjusted_climbrate(target_climb_rate);
+        target_climb_rate = get_avoidance_adjusted_climbrate(target_climb_rate);
 
         // call position controller
         copter.pos_control->set_alt_target_from_climb_rate_ff(target_climb_rate, copter.G_Dt, false);
@@ -309,7 +309,7 @@ void ModeFlowHold::run()
         target_climb_rate = copter.surface_tracking.adjust_climb_rate(target_climb_rate);
 
         // get avoidance adjusted climb rate
-        target_climb_rate = copter.get_avoidance_adjusted_climbrate(target_climb_rate);
+        target_climb_rate = get_avoidance_adjusted_climbrate(target_climb_rate);
 
         copter.pos_control->set_alt_target_from_climb_rate_ff(target_climb_rate, G_Dt, false);
         break;
@@ -400,7 +400,7 @@ void ModeFlowHold::update_height_estimate(void)
     }
 
     // convert delta velocity back to body frame to match the flow sensor
-    Vector2f delta_vel_bf = copter.ahrs.rotate_earth_to_body2D(delta_velocity_ne);
+    Vector2f delta_vel_bf = copter.ahrs.earth_to_body2D(delta_velocity_ne);
 
     // and convert to an rate equivalent, to be comparable to flow
     Vector2f delta_vel_rate(-delta_vel_bf.y, delta_vel_bf.x);

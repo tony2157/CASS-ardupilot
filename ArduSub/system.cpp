@@ -15,8 +15,8 @@ static void failsafe_check_static()
 void Sub::init_ardupilot()
 {
     BoardConfig.init();
-#if HAL_WITH_UAVCAN
-    BoardConfig_CAN.init();
+#if HAL_MAX_CAN_PROTOCOL_DRIVERS
+    can_mgr.init();
 #endif
 
 #if AP_FEATURE_BOARD_DETECT
@@ -100,7 +100,7 @@ void Sub::init_ardupilot()
     init_optflow();
 #endif
 
-#if MOUNT == ENABLED
+#if HAL_MOUNT_ENABLED
     // initialise camera mount
     camera_mount.init();
     // This step ncessary so the servo is properly initialized
@@ -132,19 +132,9 @@ void Sub::init_ardupilot()
         // We only have onboard baro
         // No external underwater depth sensor detected
         barometer.set_primary_baro(0);
-#if HAL_NAVEKF2_AVAILABLE
-        ahrs.EKF2.set_baro_alt_noise(10.0f); // Readings won't correspond with rest of INS
-#endif
-#if HAL_NAVEKF3_AVAILABLE
-        ahrs.EKF3.set_baro_alt_noise(10.0f);
-#endif
+        ahrs.set_alt_measurement_noise(10.0f);  // Readings won't correspond with rest of INS
     } else {
-#if HAL_NAVEKF2_AVAILABLE
-        ahrs.EKF2.set_baro_alt_noise(0.1f);
-#endif
-#if HAL_NAVEKF3_AVAILABLE
-        ahrs.EKF3.set_baro_alt_noise(0.1f);
-#endif
+        ahrs.set_alt_measurement_noise(0.1f);
     }
 
     leak_detector.init();
@@ -186,9 +176,7 @@ void Sub::init_ardupilot()
     ins.set_log_raw_bit(MASK_LOG_IMU_RAW);
 
     // disable safety if requested
-    BoardConfig.init_safety();    
-    
-    hal.console->print("\nInit complete");
+    BoardConfig.init_safety();
 
     // flag that initialisation has completed
     ap.initialised = true;
@@ -298,6 +286,7 @@ bool Sub::should_log(uint32_t mask)
 // dummy method to avoid linking AFS
 bool AP_AdvancedFailsafe::gcs_terminate(bool should_terminate, const char *reason) { return false; }
 AP_AdvancedFailsafe *AP::advancedfailsafe() { return nullptr; }
-
+#if HAL_ADSB_ENABLED
 // dummy method to avoid linking AP_Avoidance
 AP_Avoidance *AP::ap_avoidance() { return nullptr; }
+#endif

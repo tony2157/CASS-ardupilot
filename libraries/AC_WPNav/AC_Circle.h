@@ -68,6 +68,10 @@ public:
     float get_pitch() const { return _pos_control.get_pitch(); }
     float get_yaw() const { return _yaw; }
 
+    /// returns true if update has been run recently
+    /// used by vehicle code to determine if get_yaw() is valid
+    bool is_active() const;
+
     // get_closest_point_on_circle - returns closest point on the circle
     //  circle's center should already have been set
     //  closest point on the circle will be placed in result
@@ -82,7 +86,7 @@ public:
     int32_t get_bearing_to_target() const { return _pos_control.get_bearing_to_target(); }
 
     /// true if pilot control of radius and turn rate is enabled
-    bool pilot_control_enabled() const { return _control > 0; }
+    bool pilot_control_enabled() const { return (_options.get() & CircleOptions::MANUAL_CONTROL) != 0; }
 
     /// provide rangefinder altitude
     void set_rangefinder_alt(bool use, bool healthy, float alt_cm) { _rangefinder_available = use; _rangefinder_healthy = healthy; _rangefinder_alt_cm = alt_cm; }
@@ -123,10 +127,16 @@ private:
     const AP_AHRS_View&         _ahrs;
     AC_PosControl&              _pos_control;
 
+    enum CircleOptions {
+        MANUAL_CONTROL           = 1U << 0,
+        FACE_DIRECTION_OF_TRAVEL = 1U << 1,
+        INIT_AT_CENTER           = 1U << 2, // true then the circle center will be the current location, false and the center will be 1 radius ahead
+    };
+
     // parameters
     AP_Float    _radius;        // maximum horizontal speed in cm/s during missions
     AP_Float    _rate;          // rotation speed in deg/sec
-    AP_Int16    _control;       // stick control enable/disable
+    AP_Int16    _options;       // stick control enable/disable
 
     // internal variables
     Vector3f    _center;        // center of circle in cm from home
@@ -136,6 +146,7 @@ private:
     float       _angular_vel;   // angular velocity in radians/sec
     float       _angular_vel_max;   // maximum velocity in radians/sec
     float       _angular_accel; // angular acceleration in radians/sec/sec
+    uint32_t    _last_update_ms;    // system time of last update
 
     // terrain following variables
     bool        _terrain_alt;           // true if _center.z is alt-above-terrain, false if alt-above-ekf-origin
