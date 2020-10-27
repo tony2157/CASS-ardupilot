@@ -62,13 +62,13 @@ void Copter::userhook_init()
 
     //Wind filter initialization
     float Fss;
-    if(is_zero(fmodf(10,g.wind_vane_fs))){
-        Fss = g.wind_vane_fs;
+    if(is_zero(fmodf(10,g2.user_parameters.get_wvane_fs()))){
+        Fss = g2.user_parameters.get_wvane_fs();
     }
     else{
         Fss = 10.0f;
     }
-    if(g.wind_vane_cutoff < 0.05){
+    if(g2.user_parameters.get_wvane_cutoff() < 0.05){
         //Min Fc = 0.05 for stable yaw
         filt_thrvec_x.set_cutoff_frequency(Fss,0.05);
         filt_thrvec_y.set_cutoff_frequency(Fss,0.05);
@@ -76,9 +76,9 @@ void Copter::userhook_init()
     }
     else{
         //Initialize Butterworth filter
-        filt_thrvec_x.set_cutoff_frequency(Fss,g.wind_vane_cutoff);
-        filt_thrvec_y.set_cutoff_frequency(Fss,g.wind_vane_cutoff);
-        filt_thrvec_z.set_cutoff_frequency(Fss,g.wind_vane_cutoff);
+        filt_thrvec_x.set_cutoff_frequency(Fss,g2.user_parameters.get_wvane_cutoff());
+        filt_thrvec_y.set_cutoff_frequency(Fss,g2.user_parameters.get_wvane_cutoff());
+        filt_thrvec_z.set_cutoff_frequency(Fss,g2.user_parameters.get_wvane_cutoff());
     }
 
     //VPBatt_monitor initilize
@@ -133,14 +133,14 @@ void Copter::userhook_50Hz()
             
             // Estimate the total energy used (percentage)
             // vpbatt_reserve is the desired batt percentage after landing
-            float Wh_tot = (Whc + Whn)/g.vpbatt_wh + g.vpbatt_reserve/100.0f + 0.05f;
+            float Wh_tot = (Whc + Whn)/g2.user_parameters.get_vpbatt_wh() + g2.user_parameters.get_vpbatt_reserve()/100.0f + 0.05f;
 
             //Switch to RTL automatically if battery reaches critical remaining energy
-            if(!is_zero(g.vpbatt_wh)){
+            if(!is_zero(g2.user_parameters.get_vpbatt_wh())){
                 // Issue a warning once when the battery altitude range is over 85%
                 if(Wh_tot >= 0.85f && batt_warning_flag == false){
                     // It will still warn, even if the function is disabled
-                    if(!is_zero(g.vpbatt_enabled)){
+                    if(!is_zero(g2.user_parameters.get_vpbatt_enabled())){
                         gcs().send_text(MAV_SEVERITY_WARNING, "Over 85 Batt range");
                     }
                     batt_warning_flag = true;
@@ -150,7 +150,7 @@ void Copter::userhook_50Hz()
                 if(Wh_tot >= 1.0f && batt_home_ok == true){
                     gcs().send_text(MAV_SEVERITY_WARNING, "Max Batt range: Switch to RTL");
                     // It will still warn, even if the function is disabled
-                    if(!is_zero(g.vpbatt_enabled)){
+                    if(!is_zero(g2.user_parameters.get_vpbatt_enabled())){
                         copter.set_mode(RTL, MODE_REASON_UNKNOWN);
                     }
                     batt_home_ok = false;
@@ -327,7 +327,7 @@ void Copter::userhook_SuperSlowLoop()
         R33 = -1*copter.ahrs.get_rotation_body_to_ned().c.z;
 
         //Wind vane loop starts here. Loop frequency is defined by WVANE_FS param in Hz
-        if((AP_HAL::millis() - wvane_now) >= (uint32_t)(1000/g.wind_vane_fs)){
+        if((AP_HAL::millis() - wvane_now) >= (uint32_t)(1000/g2.user_parameters.get_wvane_fs())){
             //Apply Butterworth LPF on each element
             float thrvec_x, thrvec_y, thrvec_z;
             thrvec_x = filt_thrvec_x.apply(R13);
@@ -344,11 +344,11 @@ void Copter::userhook_SuperSlowLoop()
             if(fabsf(troll) < g.wind_vane_min_roll){ last_yrate = 0; }
 
             //Convert roll magnitude into desired yaw rate
-            float yrate = constrain_float((troll/5.0f)*g.wind_vane_fine_gain,-g.wind_vane_fine_rate,g.wind_vane_fine_rate);
+            float yrate = constrain_float((troll/5.0f)*g2.user_parameters.get_wvane_fine_gain(),-g2.user_parameters.get_wvane_fine_rate(),g2.user_parameters.get_wvane_fine_rate());
             last_yrate = 0.98f*last_yrate + 0.02f*yrate; //1st order LPF
 
             //For large compensation use "wind_psi" estimator, for fine adjusments use "yrate" estimator
-            if(fabsf(troll)<g.wind_vane_min_roll){
+            if(fabsf(troll)<g2.user_parameters.get_wvane_min_roll()){
                 //Set WVANE_MIN_ROLL to zero to disable the "yrate" estimator
                 //Output "y_rate" estimator
                 _wind_dir = copter.cass_wind_direction/100.0f + last_yrate;
@@ -362,7 +362,7 @@ void Copter::userhook_SuperSlowLoop()
 
             //Estimate wind speed with filtered parameters
             float thrvec_xy = safe_sqrt(thrvec_x*thrvec_x + thrvec_y*thrvec_y);
-            _wind_speed = g.wind_vane_wsA * fabsf(thrvec_xy/thrvec_z) + g.wind_vane_wsB*safe_sqrt(fabsf(thrvec_xy/thrvec_z));
+            _wind_speed = g2.user_parameters.get_wvane_wsA() * fabsf(thrvec_xy/thrvec_z) + g2.user_parameters.get_wvane_wsB()*safe_sqrt(fabsf(thrvec_xy/thrvec_z));
             _wind_speed = _wind_speed < 0 ? 0.0f : _wind_speed;
 
             //Get current velocity
@@ -405,15 +405,15 @@ void Copter::userhook_SuperSlowLoop()
 
             //Switch to RTL automatically if wind speed is too high (in m/s)
             //If tolerance is set to zero then auto RTL is disabled but it will still warn if enabled
-            if(!is_zero(g.wind_vane_spd_tol)){
-                if(_wind_speed > g.wind_vane_spd_tol && high_wind_flag == false && copter.flightmode->is_autopilot()){
+            if(!is_zero(g2.user_parameters.get_wvane_spd_tol())){
+                if(_wind_speed > g2.user_parameters.get_wvane_spd_tol() && high_wind_flag == false && copter.flightmode->is_autopilot()){
                     gcs().send_text(MAV_SEVERITY_WARNING, "Warning high wind: Switch to RTL");
-                    if(!is_zero(g.wind_vane_enabled)){
+                    if(!is_zero(g2.user_parameters.get_wvane_enabled())){
                         copter.set_mode(RTL, MODE_REASON_UNKNOWN);
                     }
                     high_wind_flag = true;
                 }
-                else if(_wind_speed < (g.wind_vane_spd_tol - 3.0f) && high_wind_flag == true){
+                else if(_wind_speed < (g2.user_parameters.get_wvane_spd_tol() - 3.0f) && high_wind_flag == true){
                     high_wind_flag = false;
                     gcs().send_text(MAV_SEVERITY_INFO, "High wind warning cleared");
                 }
@@ -459,7 +459,7 @@ void Copter::userhook_auxSwitch1(uint8_t ch_flag)
     AP_Mission::Mission_Command cmd;
     int32_t vp_lat = copter.current_loc.lat; // ahrs.get_home().lat;
     int32_t vp_lng = copter.current_loc.lng; // ahrs.get_home().lng;
-    float max_alt = g.autovp_max_altitude*100; //convert to cm
+    float max_alt = g2.user_parameters.get_autovp_max_altitude()*100; //convert to cm
     char autovp_message[22];
 
     // Run code when switch is toggled HIGH (pwm > 1800)
