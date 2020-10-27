@@ -39,7 +39,7 @@ public:
     AP_Float get_vpbatt_reserve() const{return vpbatt_reserve; }
     AP_Float get_vpbatt_wh() const{return vpbatt_wh; }
     // Mission auto-generator
-    AP_Float get_autovp_max_alt() const{return get_autovp_max_alt; }
+    AP_Float get_autovp_max_alt() const{return autovp_max_altitude; }
 
     
 private:
