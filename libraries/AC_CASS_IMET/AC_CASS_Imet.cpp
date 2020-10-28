@@ -46,22 +46,23 @@ bool AC_CASS_Imet::init(uint8_t busId, uint8_t i2cAddr)
              ADS1115_REG_CONFIG_OS_SINGLE;     // Start single-conversion
              
     // Bus 0 is for Pixhawk 2.1 I2C and Bus 1 is for Pixhawk 1 and PixRacer I2C
-    _dev = std::move(hal.i2c_mgr->get_device(busId, i2cAddr));
-
     // Check if device exists
     _dev = std::move(hal.i2c_mgr->get_device(busId, i2cAddr));
     if (!_dev) {
         return false;
     }
-    WITH_SEMAPHORE(_sem);
+    _dev->get_semaphore()->take_blocking();
 
     _dev->set_retries(10);
 
     if (!_start_conversion(ADS1115_READ_SOURCE)) {
+        _dev->get_semaphore()->give();
         return false;
     }
 
+    _dev->get_semaphore()->give();
     hal.scheduler->delay(300);
+    _dev->get_semaphore()->take_blocking();
 
     // Read the first source measurement
     _read_adc(adc_source);
@@ -72,7 +73,7 @@ bool AC_CASS_Imet::init(uint8_t busId, uint8_t i2cAddr)
     // lower retries for loop
     _dev->set_retries(2);
 
-    //_dev->get_semaphore()->give();
+    _dev->get_semaphore()->give();
 
     /* Request 25Hz update */
     // Max conversion time is 12 ms

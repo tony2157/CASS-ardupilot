@@ -22,19 +22,20 @@ bool AC_CASS_HYT271::init(uint8_t busId, uint8_t i2cAddr)
     if (!_dev) {
         return false;
     }
-    WITH_SEMAPHORE(_sem);
+    _dev->get_semaphore()->take_blocking();
 
     _dev->set_retries(10);
 
     // Start the first measurement
     if (!_measure()) {
+        _dev->get_semaphore()->give();
         return false;
     }
 
     // lower retries for run
     _dev->set_retries(3);
 
-    //_dev->get_semaphore()->give();
+    _dev->get_semaphore()->give();
 
     /* Request 20Hz update */
     // Max conversion time is 12 ms
@@ -72,6 +73,7 @@ bool AC_CASS_HYT271::_collect(float &hum, float &temp)
         return false;
     }
 
+    WITH_SEMAPHORE(_sem);                           // semaphore for access to shared frontend data
     // Bit shift and convert to floating point number
     raw = (data[0] << 8) | data[1];
     raw = raw & 0x3FFF;
@@ -87,7 +89,6 @@ bool AC_CASS_HYT271::_collect(float &hum, float &temp)
 
 void AC_CASS_HYT271::_timer(void)
 {
-    WITH_SEMAPHORE(_sem);                           // semaphore for access to shared frontend data
     _healthy = _collect(_humidity, _temperature);   // Retreive data from the sensor
     _measure();                                     // Request a new measurement to the sensor
 }
