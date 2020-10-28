@@ -111,7 +111,10 @@ void Copter::userhook_50Hz()
         // Enter loop every 100 milliseconds
         if(dt >= 100.0f){
             // Calculate energy consumed in Watt-hour
-            Whc = Whc + battery.voltage()*battery.current_amps()*dt/3.6e6f;
+            float current;
+            if(battery.current_amps(current)){
+                Whc = Whc + battery.voltage()*current*dt/3.6e6f;
+            }
 
             //Compute the temporal integration of the wind speed (works as a memory)
             Vector3f velocity;
@@ -151,7 +154,7 @@ void Copter::userhook_50Hz()
                     gcs().send_text(MAV_SEVERITY_WARNING, "Max Batt range: Switch to RTL");
                     // It will still warn, even if the function is disabled
                     if(!is_zero(g2.user_parameters.get_vpbatt_enabled())){
-                        copter.set_mode(RTL, MODE_REASON_UNKNOWN);
+                        copter.set_mode(Mode::Number::RTL, ModeReason::UNKNOWN);
                     }
                     batt_home_ok = false;
                 }
@@ -341,7 +344,7 @@ void Copter::userhook_SuperSlowLoop()
             float troll = copter.wp_nav->get_roll()/100.0f;
 
             //Define a dead zone around zero roll
-            if(fabsf(troll) < g.wind_vane_min_roll){ last_yrate = 0; }
+            if(fabsf(troll) < g2.user_parameters.get_wvane_min_roll()){ last_yrate = 0; }
 
             //Convert roll magnitude into desired yaw rate
             float yrate = constrain_float((troll/5.0f)*g2.user_parameters.get_wvane_fine_gain(),-g2.user_parameters.get_wvane_fine_rate(),g2.user_parameters.get_wvane_fine_rate());
@@ -409,7 +412,7 @@ void Copter::userhook_SuperSlowLoop()
                 if(_wind_speed > g2.user_parameters.get_wvane_spd_tol() && high_wind_flag == false && copter.flightmode->is_autopilot()){
                     gcs().send_text(MAV_SEVERITY_WARNING, "Warning high wind: Switch to RTL");
                     if(!is_zero(g2.user_parameters.get_wvane_enabled())){
-                        copter.set_mode(RTL, MODE_REASON_UNKNOWN);
+                        copter.set_mode(Mode::Number::RTL, ModeReason::UNKNOWN);
                     }
                     high_wind_flag = true;
                 }
@@ -453,112 +456,129 @@ void Copter::userhook_SuperSlowLoop()
 #endif
 
 #ifdef USERHOOK_AUXSWITCH
-void Copter::userhook_auxSwitch1(uint8_t ch_flag)
+void Copter::userhook_auxSwitch1()
 {
     // put your aux switch #1 handler here (CHx_OPT = 47)
+    // Code runs when switch is toggled HIGH (pwm > 1800)
     AP_Mission::Mission_Command cmd;
     int32_t vp_lat = copter.current_loc.lat; // ahrs.get_home().lat;
     int32_t vp_lng = copter.current_loc.lng; // ahrs.get_home().lng;
-    float max_alt = g2.user_parameters.get_autovp_max_altitude()*100; //convert to cm
-    char autovp_message[22];
+    float max_alt = g2.user_parameters.get_autovp_max_alt()*100; //convert to cm
 
-    // Run code when switch is toggled HIGH (pwm > 1800)
-    if(ch_flag==AUX_SWITCH_HIGH){
-        // Check if drone is grounded and ready to create a mission
-        if(ap.land_complete && copter.position_ok() && (AP_HAL::millis() - mission_now) > 5000){
+    // Check if drone is grounded and ready to create a mission
+    if(ap.land_complete && copter.position_ok() && (AP_HAL::millis() - mission_now) > 5000){
 
-            // clear mission
-            mission.clear();
+        // clear mission
+        copter.mode_auto.mission.clear();
+        //mission.clear();
 
-            // Command #0 : home
-            cmd.id = MAV_CMD_NAV_WAYPOINT;
-            cmd.content.location.options = 0;
-            cmd.p1 = 0;
-            cmd.content.location.flags.relative_alt = 1;
-            cmd.content.location.alt = 0;
-            cmd.content.location.lat = vp_lat;
-            cmd.content.location.lng = vp_lng;
-            if (!mission.add_cmd(cmd)) {
-                gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: failed to create mission");
-            }
-
-            // Command #1 : take-off to 5m
-            cmd.id = MAV_CMD_NAV_TAKEOFF;
-            cmd.content.location.options = 0;
-            cmd.p1 = 0;
-            cmd.content.location.flags.relative_alt = 1;
-            cmd.content.location.alt = 500; //in cm
-            cmd.content.location.lat = 0;
-            cmd.content.location.lng = 0;
-            if (!mission.add_cmd(cmd)) {
-                gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: failed to create mission");
-            }
-
-            // Command #2 : Bottom waypoint at 10m
-            cmd.id = MAV_CMD_NAV_WAYPOINT;
-            cmd.content.location.options = 0;
-            cmd.p1 = 0;
-            cmd.content.location.flags.relative_alt = 1;
-            cmd.content.location.alt = 1000;
-            cmd.content.location.lat = vp_lat;
-            cmd.content.location.lng = vp_lng;
-            if (!mission.add_cmd(cmd)) {
-                gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: failed to create mission");
-            }
-
-            // Constrain target altitude
-            if(max_alt > 180000){
-                max_alt = 180000;
-                gcs().send_text(MAV_SEVERITY_INFO, "AutoVP: Max Alt set to 1800m");
-            }
-            if(max_alt < 1000){
-                max_alt = 1000;
-                gcs().send_text(MAV_SEVERITY_INFO, "AutoVP: Max Alt set to 10m");
-            }
-
-            // Command #3 : Top waypoint at desired altitude (from parameter)
-            cmd.id = MAV_CMD_NAV_WAYPOINT;
-            cmd.content.location.options = 0;
-            cmd.p1 = 0;
-            cmd.content.location.flags.relative_alt = 1;
-            cmd.content.location.alt = (int32_t)max_alt;
-            cmd.content.location.lat = vp_lat;
-            cmd.content.location.lng = vp_lng;
-            if (!mission.add_cmd(cmd)) {
-                gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: failed to create mission");
-            }
-
-            // Command #4 : RTL
-            cmd.id = MAV_CMD_NAV_RETURN_TO_LAUNCH;
-            cmd.p1 = 0;
-            cmd.content.location.flags.relative_alt = 1;
-            cmd.content.location.lat = 0;
-            cmd.content.location.lng = 0;
-            cmd.content.location.alt = 0;
-            if (!mission.add_cmd(cmd)) {
-                gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: failed to create mission");
-            }
-
-            // Send successful creation message
-            gcs().send_text(MAV_SEVERITY_INFO, "AutoVP mission received");
-            snprintf(autovp_message, 22, "Target alt: %.1f m",max_alt/100);
-            gcs().send_text(MAV_SEVERITY_INFO, autovp_message);
-
-            mission_now = AP_HAL::millis();
+        // Command #0 : home
+        cmd.id = MAV_CMD_NAV_WAYPOINT;
+        cmd.content.location = Location{
+                                    vp_lat,
+                                    vp_lng,
+                                    0,
+                                    Location::AltFrame::ABOVE_HOME};
+        // cmd.content.location.relative_alt = 1;
+        // cmd.content.location.alt = 0;
+        // cmd.content.location.lat = vp_lat;
+        // cmd.content.location.lng = vp_lng;
+        if (!copter.mode_auto.mission.add_cmd(cmd)) {
+            gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: failed to create mission");
         }
-        else{
-            // Send unable to create mission message warning
-            gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: Unable to create mission");
+
+        // Command #1 : take-off to 5m
+        cmd.id = MAV_CMD_NAV_TAKEOFF;
+        cmd.p1 = 0;
+        cmd.content.location = Location{
+                                    0,
+                                    0,
+                                    500,
+                                    Location::AltFrame::ABOVE_HOME};
+        // cmd.content.location.relative_alt = 1;
+        // cmd.content.location.alt = 500; //in cm
+        // cmd.content.location.lat = 0;
+        // cmd.content.location.lng = 0;
+        if (!copter.mode_auto.mission.add_cmd(cmd)) {
+            gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: failed to create mission");
         }
+
+        // Command #2 : Bottom waypoint at 10m
+        cmd.id = MAV_CMD_NAV_WAYPOINT;
+        cmd.p1 = 0;
+        cmd.content.location = Location{
+                                    vp_lat,
+                                    vp_lng,
+                                    1000,
+                                    Location::AltFrame::ABOVE_HOME};
+        // cmd.content.location.relative_alt = 1;
+        // cmd.content.location.alt = 1000;
+        // cmd.content.location.lat = vp_lat;
+        // cmd.content.location.lng = vp_lng;
+        if (!copter.mode_auto.mission.add_cmd(cmd)) {
+            gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: failed to create mission");
+        }
+
+        // Constrain target altitude
+        if(max_alt > 180000){
+            max_alt = 180000;
+            gcs().send_text(MAV_SEVERITY_INFO, "AutoVP: Max Alt set to 1800m");
+        }
+        if(max_alt < 1000){
+            max_alt = 1000;
+            gcs().send_text(MAV_SEVERITY_INFO, "AutoVP: Max Alt set to 10m");
+        }
+
+        // Command #3 : Top waypoint at desired altitude (from parameter)
+        cmd.id = MAV_CMD_NAV_WAYPOINT;
+        cmd.p1 = 0;
+        cmd.content.location = Location{
+                                    vp_lat,
+                                    vp_lng,
+                                    (int32_t)max_alt,
+                                    Location::AltFrame::ABOVE_HOME};
+        // cmd.content.location.relative_alt = 1;
+        // cmd.content.location.alt = (int32_t)max_alt;
+        // cmd.content.location.lat = vp_lat;
+        // cmd.content.location.lng = vp_lng;
+        if (!copter.mode_auto.mission.add_cmd(cmd)) {
+            gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: failed to create mission");
+        }
+
+        // Command #4 : RTL
+        cmd.id = MAV_CMD_NAV_RETURN_TO_LAUNCH;
+        cmd.p1 = 0;
+        cmd.content.location = Location{
+                                    0,
+                                    0,
+                                    0,
+                                    Location::AltFrame::ABOVE_HOME};
+        // cmd.content.location.relative_alt = 1;
+        // cmd.content.location.lat = 0;
+        // cmd.content.location.lng = 0;
+        // cmd.content.location.alt = 0;
+        if (!copter.mode_auto.mission.add_cmd(cmd)) {
+            gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: failed to create mission");
+        }
+
+        // Send successful creation message
+        gcs().send_text(MAV_SEVERITY_INFO, "AutoVP mission received");
+        gcs().send_text(MAV_SEVERITY_INFO, "Target alt: %f m",max_alt/100);
+
+        mission_now = AP_HAL::millis();
+    }
+    else{
+        // Send unable to create mission message warning
+        gcs().send_text(MAV_SEVERITY_WARNING, "AutoVP: Unable to create mission");
     }
 }
 
-void Copter::userhook_auxSwitch2(uint8_t ch_flag)
+void Copter::userhook_auxSwitch2()
 {
     // put your aux switch #2 handler here (CHx_OPT = 48)
 }
 
-void Copter::userhook_auxSwitch3(uint8_t ch_flag)
+void Copter::userhook_auxSwitch3()
 {
     // put your aux switch #3 handler here (CHx_OPT = 49)
 }
