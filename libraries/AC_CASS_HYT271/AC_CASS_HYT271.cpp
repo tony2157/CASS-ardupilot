@@ -17,18 +17,17 @@ AC_CASS_HYT271::AC_CASS_HYT271() :
 bool AC_CASS_HYT271::init(uint8_t busId, uint8_t i2cAddr)
 {
     // Bus 0 is for Pixhawk 2.1 I2C and Bus 1 is for Pixhawk 1 and PixRacer I2C
+    // Check if device exists
     _dev = std::move(hal.i2c_mgr->get_device(busId, i2cAddr));
-
     if (!_dev) {
-        printf("HYT271 device is null!");
         return false;
     }
     WITH_SEMAPHORE(_sem);
 
     _dev->set_retries(10);
 
+    // Start the first measurement
     if (!_measure()) {
-        printf("HYT271 read failed");
         return false;
     }
 
@@ -39,7 +38,7 @@ bool AC_CASS_HYT271::init(uint8_t busId, uint8_t i2cAddr)
 
     /* Request 20Hz update */
     // Max conversion time is 12 ms
-    _dev->register_periodic_callback(60000,
+    _dev->register_periodic_callback(100000,
                                      FUNCTOR_BIND_MEMBER(&AC_CASS_HYT271::_timer, void));
     return true;
 }
