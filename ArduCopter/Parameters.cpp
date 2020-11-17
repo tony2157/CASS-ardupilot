@@ -172,8 +172,8 @@ const AP_Param::Info Copter::var_info[] = {
 
     // @Param: FS_GCS_ENABLE
     // @DisplayName: Ground Station Failsafe Enable
-    // @Description: Controls whether failsafe will be invoked (and what action to take) when connection with Ground station is lost for at least 5 seconds. NB. The GCS Failsafe is only active when RC_OVERRIDE is being used to control the vehicle.
-    // @Values: 0:Disabled,1:Enabled always RTL,2:Enabled Continue with Mission in Auto Mode (Deprecated in 4.0+),3:Enabled always SmartRTL or RTL,4:Enabled always SmartRTL or Land,5:Enabled always land (4.0+ Only)
+    // @Description: Controls whether failsafe will be invoked (and what action to take) when connection with Ground station is lost for at least 5 seconds. See FS_OPTIONS param for additional actions, or for cases allowing Mission continuation, when GCS failsafe is enabled.
+    // @Values: 0:Disabled/NoAction,1:RTL,2:RTL or Continue with Mission in Auto Mode (Deprecated in 4.0+-see FS_OPTIONS),3:SmartRTL or RTL,4:SmartRTL or Land,5:Land (4.0+ Only)
     // @User: Standard
     GSCALAR(failsafe_gcs, "FS_GCS_ENABLE", FS_GCS_DISABLED),
 
@@ -244,7 +244,7 @@ const AP_Param::Info Copter::var_info[] = {
     // @Param: FS_THR_VALUE
     // @DisplayName: Throttle Failsafe Value
     // @Description: The PWM level in microseconds on channel 3 below which throttle failsafe triggers
-    // @Range: 925 1100
+    // @Range: 910 1100
     // @Units: PWM
     // @Increment: 1
     // @User: Standard
@@ -709,7 +709,7 @@ const AP_Param::Info Copter::var_info[] = {
     // @User: Standard
     GSCALAR(rtl_alt_type, "RTL_ALT_TYPE", 0),
 
-#if OSD_ENABLED == ENABLED
+#if OSD_ENABLED || OSD_PARAM_ENABLED
     // @Group: OSD
     // @Path: ../libraries/AP_OSD/AP_OSD.cpp
     GOBJECT(osd, "OSD", AP_OSD),
@@ -993,6 +993,15 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("GUID_OPTIONS", 41, ParametersG2, guided_options, 0),
 #endif
+
+    // @Param: FS_GCS_TIMEOUT
+    // @DisplayName: GCS failsafe timeout
+    // @Description: Timeout before triggering the GCS failsafe
+    // @Units: s
+    // @Range: 2 120
+    // @Increment: 1
+    // @User: Standard
+    AP_GROUPINFO("FS_GCS_TIMEOUT", 42, ParametersG2, fs_gcs_timeout, 5),
 
     AP_GROUPEND
 };
