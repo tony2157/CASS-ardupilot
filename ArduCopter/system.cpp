@@ -55,10 +55,6 @@ void Copter::init_ardupilot()
     // setup telem slots with serial ports
     gcs().setup_uarts();
 
-#if GENERATOR_ENABLED
-    generator.init();
-#endif
-
 #if OSD_ENABLED == ENABLED
     osd.init();
 #endif
@@ -223,9 +219,6 @@ void Copter::init_ardupilot()
     if (arming.rc_calibration_checks(true)) {
         enable_motor_output();
     }
-
-    // disable safety if requested
-    BoardConfig.init_safety();
 
     // flag that initialisation has completed
     ap.initialised = true;
@@ -477,6 +470,8 @@ MAV_TYPE Copter::get_frame_mav_type()
             return MAV_TYPE_COAXIAL;
         case AP_Motors::MOTOR_FRAME_DODECAHEXA:
             return MAV_TYPE_DODECAROTOR;
+        case AP_Motors::MOTOR_FRAME_DECA:
+            return MAV_TYPE_DECAROTOR;
     }
     // unknown frame so return generic
     return MAV_TYPE_GENERIC;
@@ -512,6 +507,8 @@ const char* Copter::get_frame_string()
             return "TAILSITTER";
         case AP_Motors::MOTOR_FRAME_DODECAHEXA:
             return "DODECA_HEXA";
+        case AP_Motors::MOTOR_FRAME_DECA:
+            return "DECA";
         case AP_Motors::MOTOR_FRAME_UNDEFINED:
         default:
             return "UNKNOWN";
@@ -531,6 +528,7 @@ void Copter::allocate_motors(void)
         case AP_Motors::MOTOR_FRAME_OCTA:
         case AP_Motors::MOTOR_FRAME_OCTAQUAD:
         case AP_Motors::MOTOR_FRAME_DODECAHEXA:
+        case AP_Motors::MOTOR_FRAME_DECA:
         default:
             motors = new AP_MotorsMatrix(copter.scheduler.get_loop_rate_hz());
             motors_var_info = AP_MotorsMatrix::var_info;

@@ -904,9 +904,10 @@ private:
     void init_CASS_imet(void);
     void init_CASS_hyt271(void);  
 
-#if OSD_ENABLED == ENABLED
-    void publish_osd_info();
-#endif
+    // vehicle specific waypoint info helpers
+    bool get_wp_distance_m(float &distance) const override;
+    bool get_wp_bearing_deg(float &bearing) const override;
+    bool get_wp_crosstrack_error_m(float &xtrack_error) const override;
 
     Mode *flightmode;
 #if MODE_ACRO_ENABLED == ENABLED
