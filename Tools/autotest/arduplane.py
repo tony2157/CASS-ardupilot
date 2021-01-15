@@ -118,8 +118,7 @@ class AutoTestPlane(AutoTest):
 
     def fly_left_circuit(self):
         """Fly a left circuit, 200m on a side."""
-        self.mavproxy.send('switch 4\n')
-        self.wait_mode('FBWA')
+        self.change_mode('FBWA')
         self.set_rc(3, 2000)
         self.wait_level_flight()
 
@@ -138,8 +137,7 @@ class AutoTestPlane(AutoTest):
     def fly_RTL(self):
         """Fly to home."""
         self.progress("Flying home in RTL")
-        self.mavproxy.send('switch 2\n')
-        self.wait_mode('RTL')
+        self.change_mode('RTL')
         self.wait_location(self.homeloc,
                            accuracy=120,
                            target_altitude=self.homeloc.alt+100,
@@ -264,8 +262,7 @@ class AutoTestPlane(AutoTest):
         self.change_altitude(self.homeloc.alt+300)
 
         # fly the roll in manual
-        self.mavproxy.send('switch 6\n')
-        self.wait_mode('MANUAL')
+        self.change_mode('MANUAL')
 
         while count > 0:
             self.progress("Starting roll")
@@ -281,8 +278,7 @@ class AutoTestPlane(AutoTest):
 
         # back to FBWA
         self.set_rc(1, 1500)
-        self.mavproxy.send('switch 4\n')
-        self.wait_mode('FBWA')
+        self.change_mode('FBWA')
         self.set_rc(3, 1700)
         return self.wait_level_flight()
 
@@ -292,8 +288,7 @@ class AutoTestPlane(AutoTest):
         self.set_rc(3, 2000)
         self.change_altitude(self.homeloc.alt+300)
         # fly the loop in manual
-        self.mavproxy.send('switch 6\n')
-        self.wait_mode('MANUAL')
+        self.change_mode('MANUAL')
 
         while count > 0:
             self.progress("Starting loop")
@@ -304,8 +299,7 @@ class AutoTestPlane(AutoTest):
 
         # back to FBWA
         self.set_rc(2, 1500)
-        self.mavproxy.send('switch 4\n')
-        self.wait_mode('FBWA')
+        self.change_mode('FBWA')
         self.set_rc(3, 1700)
         return self.wait_level_flight()
 
@@ -535,10 +529,9 @@ class AutoTestPlane(AutoTest):
     def fly_mission(self, filename, mission_timeout=60.0):
         """Fly a mission from a file."""
         self.progress("Flying mission %s" % filename)
-        self.load_mission(filename)
-        self.mavproxy.send('switch 1\n')  # auto mode
-        self.wait_mode('AUTO')
-        self.wait_waypoint(1, 7, max_dist=60)
+        num_wp = self.load_mission(filename)-1
+        self.change_mode('AUTO')
+        self.wait_waypoint(1, num_wp, max_dist=60)
         self.wait_groundspeed(0, 0.5, timeout=mission_timeout)
         self.mavproxy.expect("Auto disarmed")
         self.progress("Mission OK")
@@ -759,8 +752,7 @@ class AutoTestPlane(AutoTest):
             self.progress("Flying mission %s" % filename)
             self.load_mission(filename)
             self.mavproxy.send('wp set 1\n')
-            self.mavproxy.send('switch 1\n')  # auto mode
-            self.wait_mode('AUTO')
+            self.change_mode('AUTO')
             self.wait_ready_to_arm()
             self.arm_vehicle()
             last_mission_current_msg = 0
@@ -791,6 +783,8 @@ class AutoTestPlane(AutoTest):
 
             self.progress("Flaps OK")
         except Exception as e:
+            self.progress("Caught exception: %s" %
+                          self.get_exception_stacktrace(e))
             ex = e
         self.context_pop()
         if ex:
@@ -978,14 +972,23 @@ class AutoTestPlane(AutoTest):
 
         self.set_parameter("FENCE_CHANNEL", 7)
         self.set_parameter("FENCE_ACTION", 4)
-        self.set_rc(3, 1000)
-        self.set_rc(7, 2000)
+
+        self.wait_sensor_state(mavutil.mavlink.MAV_SYS_STATUS_GEOFENCE,
+                               present=True,
+                               enabled=False,
+                               healthy=True)
+        self.set_rc_from_map({
+            3: 1000,
+            7: 2000,
+        })
 
         self.progress("Checking fence is initially OK")
-        m = self.mav.recv_match(type='SYS_STATUS', blocking=True)
-        print("%s" % str(m))
-        if (not (m.onboard_control_sensors_enabled & fence_bit)):
-            raise NotAchievedException("Fence not initially enabled")
+        self.wait_sensor_state(mavutil.mavlink.MAV_SYS_STATUS_GEOFENCE,
+                               present=True,
+                               enabled=True,
+                               healthy=True,
+                               verbose=True,
+                               timeout=30)
 
         self.set_parameter("THR_FS_VALUE", 960)
         self.progress("Failing receiver (throttle-to-950)")
@@ -1482,6 +1485,9 @@ class AutoTestPlane(AutoTest):
         ret[8] = 1800
         return ret
 
+    def initial_mode_switch_mode(self):
+        return "MANUAL"
+
     def default_mode(self):
         return "MANUAL"
 
@@ -1491,11 +1497,8 @@ class AutoTestPlane(AutoTest):
 
 
     def test_setting_modes_via_auxswitches(self):
-        self.set_parameter("FLTMODE5", 1)
-        self.mavproxy.send('switch 1\n')  # random mode
-        self.wait_heartbeat()
-        self.change_mode('MANUAL')
-        self.mavproxy.send('switch 5\n')  # acro mode
+        self.set_parameter("FLTMODE1", 1)  # circle
+        self.set_rc(8, 950)
         self.wait_mode("CIRCLE")
         self.set_rc(9, 1000)
         self.set_rc(10, 1000)
@@ -1608,6 +1611,8 @@ class AutoTestPlane(AutoTest):
                 raise NotAchievedException("Got collision message when I shouldn't have")
 
         except Exception as e:
+            self.progress("Caught exception: %s" %
+                          self.get_exception_stacktrace(e))
             ex = e
         self.context_pop()
         self.reboot_sitl()
@@ -1704,7 +1709,7 @@ class AutoTestPlane(AutoTest):
         self.progress("Initial throttle: %u" % initial_throttle)
         # pitch down, ensure throttle decreases:
         rc2_max = self.get_parameter("RC2_MAX")
-        self.set_rc(2, rc2_max)
+        self.set_rc(2, int(rc2_max))
         tstart = self.get_sim_time()
         while True:
             now = self.get_sim_time_cached()
@@ -1768,10 +1773,10 @@ class AutoTestPlane(AutoTest):
         if rc_chan==0:
             raise NotAchievedException("Did not find soaring enable channel option.")
 
-        self.send_set_rc(rc_chan, 1900)
-
-        # Use trim airspeed.
-        self.send_set_rc(3, 1500)
+        self.set_rc_from_map({
+            rc_chan: 1900,
+            3: 1500, # Use trim airspeed.
+        });
 
         # Wait to detect thermal
         self.progress("Waiting for thermal")
@@ -1830,14 +1835,14 @@ class AutoTestPlane(AutoTest):
         self.set_parameter("SIM_THML_SCENARI", 1)
 
         # Disable soaring using RC channel.
-        self.send_set_rc(rc_chan, 1100)
+        self.set_rc(rc_chan, 1100)
 
         # Wait to get back to waypoint before thermal.
         self.progress("Waiting to get back to position")
         self.wait_current_waypoint(3,timeout=1200)
 
         # Enable soaring with mode changes suppressed)
-        self.send_set_rc(rc_chan, 1500)
+        self.set_rc(rc_chan, 1500)
 
         # Make sure this causes throttle down.
         self.wait_servo_channel_value(3, 1200, timeout=2, comparator=operator.lt)
@@ -1850,15 +1855,40 @@ class AutoTestPlane(AutoTest):
 
         self.progress("Mission OK")
 
-    def fly_terrain_mission(self):
+    def test_airspeed_drivers(self):
+        self.set_parameter("ARSPD2_TYPE", 7)
+        self.reboot_sitl()
+        self.wait_ready_to_arm()
+        self.arm_vehicle()
+        self.fly_mission("ap1.txt")
 
-        self.customise_SITL_commandline([], wipe=True)
+    def fly_terrain_mission(self):
 
         self.mavproxy.send("wp set 1\n")
         self.wait_ready_to_arm()
         self.arm_vehicle()
 
         self.fly_mission("ap-terrain.txt", mission_timeout=600)
+
+    def fly_external_AHRS(self):
+        """Fly with external AHRS (VectorNav)"""
+        self.customise_SITL_commandline(["--uartE=sim:VectorNav"])
+
+        self.set_parameter("EAHRS_TYPE", 1)
+        self.set_parameter("SERIAL4_PROTOCOL", 36)
+        self.set_parameter("SERIAL4_BAUD", 230400)
+        self.set_parameter("GPS_TYPE", 21)
+        self.set_parameter("AHRS_EKF_TYPE", 11)
+        self.set_parameter("INS_GYR_CAL", 1)
+        self.reboot_sitl()
+        self.progress("Running accelcal")
+        self.run_cmd(mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION,
+                     0,0,0,0,4,0,0,
+                     timeout=5)
+
+        self.wait_ready_to_arm()
+        self.arm_vehicle()
+        self.fly_mission("ap1.txt")
 
     def ekf_lane_switch(self):
 
@@ -2146,6 +2176,10 @@ class AutoTestPlane(AutoTest):
              "Test terrain following in mission",
              self.fly_terrain_mission),
 
+            ("ExternalAHRS",
+             "Test external AHRS support",
+             self.fly_external_AHRS),
+             
             ("Deadreckoning",
              "Test deadreckoning support",
              self.deadreckoning),
@@ -2153,6 +2187,10 @@ class AutoTestPlane(AutoTest):
             ("EKFlaneswitch",
              "Test EKF3 Affinity and Lane Switching",
              self.ekf_lane_switch),
+
+            ("AirspeedDrivers",
+             "Test AirSpeed drivers",
+             self.test_airspeed_drivers),
 
             ("LogUpload",
              "Log upload",

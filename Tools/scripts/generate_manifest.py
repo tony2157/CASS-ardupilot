@@ -38,6 +38,7 @@ brand_map = {
     'CUAV-Nora' : ('CUAV Nora', 'CUAV'),
     'CUAV-X7' : ('CUAV X7', 'CUAV'),
     'DrotekP3Pro' : ('Pixhawk 3 Pro', 'Drotek'),
+    'MambaF405v2' : ('Diatone Mamba F405 MK2', 'Diatone'),
     'MatekF405' : ('Matek F405', 'Matek'),
     'MatekF405-STD' : ('Matek F405 STD', 'Matek'),
     'MatekF405-Wing' : ('Matek F405 Wing', 'Matek'),
@@ -58,6 +59,8 @@ brand_map = {
     'OmnibusNanoV6' : ('Omnibus Nano V6', 'Airbot'),
     'speedybeef4' : ('SpeedyBee F4', 'SpeedyBee'),
     'QioTekZealotF427' : ('ZealotF427', 'QioTek'),
+    'BeastH7' : ('Beast H7 55A AIO', 'iFlight'),
+    'BeastF7' : ('Beast F7 45A AIO', 'iFlight'),
 }
 
 class Firmware():
