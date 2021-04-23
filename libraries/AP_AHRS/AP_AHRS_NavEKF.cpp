@@ -640,7 +640,72 @@ Vector3f AP_AHRS_NavEKF::wind_estimate(void) const
 // if we have an estimate
 bool AP_AHRS_NavEKF::airspeed_estimate(float &airspeed_ret) const
 {
-    return AP_AHRS_DCM::airspeed_estimate(get_active_airspeed_index(), airspeed_ret);
+    bool ret = false;
+    if (airspeed_sensor_enabled()) {
+        airspeed_ret = AP::airspeed()->get_airspeed();
+        return true;
+    }
+
+    if (!_flags.wind_estimation) {
+        return false;
+    }
+
+    // estimate it via nav velocity and wind estimates
+
+    // get wind estimates
+    Vector3f wind_vel;
+    switch (active_EKF_type()) {
+    case EKFType::NONE:
+        return AP_AHRS_DCM::airspeed_estimate(get_active_airspeed_index(), airspeed_ret);
+
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+    case EKFType::SITL:
+        if (EKF3.getWind(-1,wind_vel)) {
+             ret = true;
+        } else {
+            ret = false;
+        }
+        break;
+#endif
+
+#if HAL_NAVEKF2_AVAILABLE
+    case EKFType::TWO:
+        return AP_AHRS_DCM::airspeed_estimate(get_active_airspeed_index(), airspeed_ret);
+#endif
+
+#if HAL_NAVEKF3_AVAILABLE
+    case EKFType::THREE:
+        ret = EKF3.getWind(-1,wind_vel);
+        break;
+#endif
+
+#if HAL_EXTERNAL_AHRS_ENABLED
+    case EKFType::EXTERNAL:
+        return false;
+#endif
+    }
+
+    // estimate it via nav velocity and wind estimates
+    Vector3f nav_vel;
+    float true_airspeed;
+    if (ret && have_inertial_nav() && get_velocity_NED(nav_vel)) {
+        Vector3f true_airspeed_vec = nav_vel - wind_vel;
+        true_airspeed = true_airspeed_vec.length();
+        float gnd_speed = nav_vel.length();
+        if (_wind_max > 0) {
+            float tas_lim_lower = MAX(0.0f, (gnd_speed - _wind_max));
+            float tas_lim_upper = MAX(tas_lim_lower, (gnd_speed + _wind_max));
+            true_airspeed = constrain_float(true_airspeed, tas_lim_lower, tas_lim_upper);
+        } else {
+            true_airspeed = MAX(0.0f, true_airspeed);
+        }
+        airspeed_ret = true_airspeed / get_EAS2TAS();
+    } else {
+        // fallback to DCM if airspeed estimate if EKF has wind but no velocity estimate
+        ret = AP_AHRS_DCM::airspeed_estimate(get_active_airspeed_index(), airspeed_ret);
+    }
+
+    return ret;
 }
 
 // return estimate of true airspeed vector in body frame in m/s
@@ -741,51 +806,51 @@ bool AP_AHRS_NavEKF::get_quaternion(Quaternion &quat) const
 // return secondary attitude solution if available, as eulers in radians
 bool AP_AHRS_NavEKF::get_secondary_attitude(Vector3f &eulers) const
 {
-    switch (active_EKF_type()) {
+    EKFType secondary_ekf_type;
+    if (!get_secondary_EKF_type(secondary_ekf_type)) {
+        return false;
+    }
+
+    switch (secondary_ekf_type) {
+
     case EKFType::NONE:
-        // EKF is secondary
-        switch ((EKFType)_ekf_type.get()) {
-#if HAL_NAVEKF3_AVAILABLE
-        case EKFType::THREE:
-            EKF3.getEulerAngles(-1, eulers);
-            return _ekf3_started;
-#endif
-#if HAL_NAVEKF2_AVAILABLE
-        case EKFType::TWO:
-            EKF2.getEulerAngles(-1, eulers);
-            return _ekf2_started;
-#endif
-#if HAL_EXTERNAL_AHRS_ENABLED
-        case EKFType::EXTERNAL: {
-            Quaternion quat;
-            if (!AP::externalAHRS().get_quaternion(quat)) {
-                return false;
-            }
-            quat.to_euler(eulers.x, eulers.y, eulers.z);
-            return true;
-        }
-#endif
-        default:
-            return false;
-        }
+        // DCM is secondary
+        eulers = _dcm_attitude;
+        return true;
+
 #if HAL_NAVEKF2_AVAILABLE
     case EKFType::TWO:
+        // EKF2 is secondary
+        EKF2.getEulerAngles(-1, eulers);
+        return _ekf2_started;
 #endif
 
 #if HAL_NAVEKF3_AVAILABLE
     case EKFType::THREE:
+        // EKF3 is secondary
+        EKF3.getEulerAngles(-1, eulers);
+        return _ekf3_started;
 #endif
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
     case EKFType::SITL:
+        // SITL is secondary (should never happen)
+        return false;
 #endif
+
 #if HAL_EXTERNAL_AHRS_ENABLED
-    case EKFType::EXTERNAL:
-#endif
-        // DCM is secondary
-        eulers = _dcm_attitude;
+    case EKFType::EXTERNAL: {
+        // External is secondary
+        Quaternion quat;
+        if (!AP::externalAHRS().get_quaternion(quat)) {
+            return false;
+        }
+        quat.to_euler(eulers.x, eulers.y, eulers.z);
         return true;
     }
+#endif
+    }
+
     // since there is no default case above, this is unreachable
     return false;
 }
@@ -794,36 +859,45 @@ bool AP_AHRS_NavEKF::get_secondary_attitude(Vector3f &eulers) const
 // return secondary attitude solution if available, as quaternion
 bool AP_AHRS_NavEKF::get_secondary_quaternion(Quaternion &quat) const
 {
-    switch (active_EKF_type()) {
-    case EKFType::NONE:
-        // EKF is secondary
-#if HAL_NAVEKF2_AVAILABLE
-        EKF2.getQuaternion(-1, quat);
-        return _ekf2_started;
-#elif HAL_EXTERNAL_AHRS_ENABLED
-        return AP::externalAHRS().get_quaternion(quat);
-#else
+    EKFType secondary_ekf_type;
+    if (!get_secondary_EKF_type(secondary_ekf_type)) {
         return false;
-#endif
+    }
+
+    switch (secondary_ekf_type) {
+
+    case EKFType::NONE:
+        // DCM is secondary
+        quat.from_rotation_matrix(AP_AHRS_DCM::get_rotation_body_to_ned());
+        return true;
 
 #if HAL_NAVEKF2_AVAILABLE
     case EKFType::TWO:
+        // EKF2 is secondary
+        EKF2.getQuaternion(-1, quat);
+        return _ekf2_started;
 #endif
 
 #if HAL_NAVEKF3_AVAILABLE
     case EKFType::THREE:
+        // EKF3 is secondary
+        EKF3.getQuaternion(-1, quat);
+        return _ekf3_started;
 #endif
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
     case EKFType::SITL:
+        // SITL is secondary (should never happen)
+        return false;
 #endif
+
 #if HAL_EXTERNAL_AHRS_ENABLED
     case EKFType::EXTERNAL:
+        // External is secondary
+        return AP::externalAHRS().get_quaternion(quat);
 #endif
-        // DCM is secondary
-        quat.from_rotation_matrix(AP_AHRS_DCM::get_rotation_body_to_ned());
-        return true;
     }
+
     // since there is no default case above, this is unreachable
     return false;
 }
@@ -831,36 +905,45 @@ bool AP_AHRS_NavEKF::get_secondary_quaternion(Quaternion &quat) const
 // return secondary position solution if available
 bool AP_AHRS_NavEKF::get_secondary_position(struct Location &loc) const
 {
-    switch (active_EKF_type()) {
-    case EKFType::NONE:
-        // EKF is secondary
-#if HAL_NAVEKF2_AVAILABLE
-        EKF2.getLLH(loc);
-        return _ekf2_started;
-#elif HAL_EXTERNAL_AHRS_ENABLED
-        return AP::externalAHRS().get_location(loc);
-#else
+    EKFType secondary_ekf_type;
+    if (!get_secondary_EKF_type(secondary_ekf_type)) {
         return false;
-#endif
+    }
+
+    switch (secondary_ekf_type) {
+
+    case EKFType::NONE:
+        // return DCM position
+        AP_AHRS_DCM::get_position(loc);
+        return true;
 
 #if HAL_NAVEKF2_AVAILABLE
     case EKFType::TWO:
+        // EKF2 is secondary
+        EKF2.getLLH(loc);
+        return _ekf2_started;
 #endif
 
 #if HAL_NAVEKF3_AVAILABLE
     case EKFType::THREE:
+        // EKF3 is secondary
+        EKF3.getLLH(loc);
+        return _ekf3_started;
 #endif
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
     case EKFType::SITL:
+        // SITL is secondary (should never happen)
+        return false;
 #endif
+
 #if HAL_EXTERNAL_AHRS_ENABLED
     case EKFType::EXTERNAL:
+        // External is secondary
+        return AP::externalAHRS().get_location(loc);
 #endif
-        // return DCM position
-        AP_AHRS_DCM::get_position(loc);
-        return true;
     }
+
     // since there is no default case above, this is unreachable
     return false;
 }
@@ -1542,6 +1625,54 @@ AP_AHRS_NavEKF::EKFType AP_AHRS_NavEKF::active_EKF_type(void) const
     return ret;
 }
 
+// get secondary EKF type.  returns false if no secondary (i.e. only using DCM)
+bool AP_AHRS_NavEKF::get_secondary_EKF_type(EKFType &secondary_ekf_type) const
+{
+
+    switch (active_EKF_type()) {
+    case EKFType::NONE:
+        // EKF2, EKF3 or External is secondary
+#if HAL_NAVEKF3_AVAILABLE
+        if ((EKFType)_ekf_type.get() == EKFType::THREE) {
+            secondary_ekf_type = EKFType::THREE;
+            return true;
+        }
+#endif
+#if HAL_NAVEKF2_AVAILABLE
+        if ((EKFType)_ekf_type.get() == EKFType::TWO) {
+            secondary_ekf_type = EKFType::TWO;
+            return true;
+        }
+#endif
+#if HAL_EXTERNAL_AHRS_ENABLED
+        if ((EKFType)_ekf_type.get() == EKFType::EXTERNAL) {
+            secondary_ekf_type = EKFType::EXTERNAL;
+            return true;
+        }
+#endif
+        return false;
+
+#if HAL_NAVEKF2_AVAILABLE
+    case EKFType::TWO:
+#endif
+#if HAL_NAVEKF3_AVAILABLE
+    case EKFType::THREE:
+#endif
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+    case EKFType::SITL:
+#endif
+#if HAL_EXTERNAL_AHRS_ENABLED
+    case EKFType::EXTERNAL:
+#endif
+        // DCM is secondary
+        secondary_ekf_type = EKFType::NONE;
+        return true;
+    }
+
+    // since there is no default case above, this is unreachable
+    return false;
+}
+
 /*
   check if the AHRS subsystem is healthy
 */
@@ -1602,7 +1733,8 @@ bool AP_AHRS_NavEKF::healthy(void) const
 }
 
 // returns false if we fail arming checks, in which case the buffer will be populated with a failure message
-bool AP_AHRS_NavEKF::pre_arm_check(char *failure_msg, uint8_t failure_msg_len) const
+// requires_position should be true if horizontal position configuration should be checked
+bool AP_AHRS_NavEKF::pre_arm_check(bool requires_position, char *failure_msg, uint8_t failure_msg_len) const
 {
     bool ret = true;
     if (!healthy()) {
@@ -1639,7 +1771,7 @@ bool AP_AHRS_NavEKF::pre_arm_check(char *failure_msg, uint8_t failure_msg_len) c
             hal.util->snprintf(failure_msg, failure_msg_len, "EKF3 not started");
             return false;
         }
-        return EKF3.pre_arm_check(failure_msg, failure_msg_len) && ret;
+        return EKF3.pre_arm_check(requires_position, failure_msg, failure_msg_len) && ret;
 #endif
     }
 
@@ -1757,14 +1889,14 @@ void AP_AHRS_NavEKF::writeExtNavData(const Vector3f &pos, const Quaternion &quat
 #endif
 }
 
-// Writes the default equivalent airspeed in m/s to be used in forward flight if a measured airspeed is required and not available.
-void AP_AHRS_NavEKF::writeDefaultAirSpeed(float airspeed)
+// Writes the default equivalent airspeed and 1-sigma uncertainty in m/s to be used in forward flight if a measured airspeed is required and not available.
+void AP_AHRS_NavEKF::writeDefaultAirSpeed(float airspeed, float uncertainty)
 {
 #if HAL_NAVEKF2_AVAILABLE
     EKF2.writeDefaultAirSpeed(airspeed);
 #endif
 #if HAL_NAVEKF3_AVAILABLE
-    EKF3.writeDefaultAirSpeed(airspeed);
+    EKF3.writeDefaultAirSpeed(airspeed, uncertainty);
 #endif
 }
 
@@ -1879,9 +2011,7 @@ void AP_AHRS_NavEKF::getCorrectedDeltaVelocityNED(Vector3f& ret, float& dt) cons
         return;
     }
     ret.zero();
-    const AP_InertialSensor &_ins = AP::ins();
-    _ins.get_delta_velocity((uint8_t)imu_idx, ret);
-    dt = _ins.get_delta_velocity_dt((uint8_t)imu_idx);
+    AP::ins().get_delta_velocity((uint8_t)imu_idx, ret, dt);
     ret -= accel_bias*dt;
     ret = _dcm_matrix * get_rotation_autopilot_body_to_vehicle_body() * ret;
     ret.z += GRAVITY_MSS*dt;

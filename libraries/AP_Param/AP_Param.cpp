@@ -696,11 +696,11 @@ void AP_Param::set_key(Param_header &phdr, uint16_t key)
  */
 bool AP_Param::is_sentinal(const Param_header &phdr)
 {
-    // note that this is an ||, not an &&, as this makes us more
-    // robust to power off while adding a variable to EEPROM
+    // note that this is an ||, not an && on the key and group, as
+    // this makes us more robust to power off while adding a variable
+    // to EEPROM
     if (phdr.type == _sentinal_type ||
-        get_key(phdr) == _sentinal_key ||
-        phdr.group_element == _sentinal_group) {
+        get_key(phdr) == _sentinal_key) {
         return true;
     }
     // also check for 0xFFFFFFFF and 0x00000000, which are the fill
@@ -1034,6 +1034,21 @@ bool AP_Param::find_top_level_key_by_pointer(const void *ptr, uint16_t &key)
     return false;
 }
 
+/*
+  fetch a parameter value based on the index within a group. This
+  is used to find the old value of a parameter that has been
+  removed from an object.
+*/
+bool AP_Param::get_param_by_index(void *obj_ptr, uint8_t idx, ap_var_type old_ptype, void *pvalue)
+{
+    uint16_t key;
+    if (!find_top_level_key_by_pointer(obj_ptr, key)) {
+        return false;
+    }
+    const ConversionInfo type_info = {key, idx, old_ptype, nullptr };
+    return AP_Param::find_old_parameter(&type_info, (AP_Param *)pvalue);
+}
+
 
 // Find a object by name.
 //
@@ -1082,7 +1097,7 @@ void AP_Param::notify() const {
 /*
   Save the variable to HAL storage, synchronous version
 */
-void AP_Param::save_sync(bool force_save)
+void AP_Param::save_sync(bool force_save, bool send_to_gcs)
 {
     uint32_t group_element = 0;
     const struct GroupInfo *ginfo;
@@ -1129,7 +1144,9 @@ void AP_Param::save_sync(bool force_save)
     if (scan(&phdr, &ofs)) {
         // found an existing copy of the variable
         eeprom_write_check(ap, ofs+sizeof(phdr), type_size((enum ap_var_type)phdr.type));
-        send_parameter(name, (enum ap_var_type)phdr.type, idx);
+        if (send_to_gcs) {
+            send_parameter(name, (enum ap_var_type)phdr.type, idx);
+        }
         return;
     }
     if (ofs == (uint16_t) ~0) {
@@ -1146,7 +1163,9 @@ void AP_Param::save_sync(bool force_save)
             v2 = get_default_value(this, &info->def_value);
         }
         if (is_equal(v1,v2) && !force_save) {
-            GCS_SEND_PARAM(name, (enum ap_var_type)info->type, v2);
+            if (send_to_gcs) {
+                GCS_SEND_PARAM(name, (enum ap_var_type)info->type, v2);
+            }
             return;
         }
         if (!force_save &&
@@ -1154,7 +1173,9 @@ void AP_Param::save_sync(bool force_save)
              (fabsf(v1-v2) < 0.0001f*fabsf(v1)))) {
             // for other than 32 bit integers, we accept values within
             // 0.01 percent of the current value as being the same
-            GCS_SEND_PARAM(name, (enum ap_var_type)info->type, v2);
+            if (send_to_gcs) {
+                GCS_SEND_PARAM(name, (enum ap_var_type)info->type, v2);
+            }
             return;
         }
     }
@@ -1170,7 +1191,9 @@ void AP_Param::save_sync(bool force_save)
     eeprom_write_check(ap, ofs+sizeof(phdr), type_size((enum ap_var_type)phdr.type));
     eeprom_write_check(&phdr, ofs, sizeof(phdr));
 
-    send_parameter(name, (enum ap_var_type)phdr.type, idx);
+    if (send_to_gcs) {
+        send_parameter(name, (enum ap_var_type)phdr.type, idx);
+    }
 }
 
 /*
@@ -1192,8 +1215,8 @@ void AP_Param::save(bool force_save)
     }
     while (!save_queue.push(p)) {
         // if we can't save to the queue
-        if (hal.util->get_soft_armed() || !hal.scheduler->in_main_thread()) {
-            // if we are armed then don't sleep, instead we lose the
+        if (hal.util->get_soft_armed() && hal.scheduler->in_main_thread()) {
+            // if we are armed in main thread then don't sleep, instead we lose the
             // parameter save
             return;
         }
@@ -1213,7 +1236,11 @@ void AP_Param::save_io_handler(void)
 {
     struct param_save p;
     while (save_queue.pop(p)) {
-        p.param->save_sync(p.force_save);
+        p.param->save_sync(p.force_save, true);
+    }
+    if (hal.scheduler->is_system_initialized()) {
+        // pay the cost of parameter counting in the IO thread
+        count_parameters();
     }
 }
 
@@ -1464,8 +1491,6 @@ bool AP_Param::load_all()
     
     while (ofs < _storage.size()) {
         _storage.read_block(&phdr, ofs, sizeof(phdr));
-        // note that this is an || not an && for robustness
-        // against power off while adding a variable
         if (is_sentinal(phdr)) {
             // we've reached the sentinal
             sentinal_offset = ofs;
@@ -1531,9 +1556,6 @@ void AP_Param::load_object_from_eeprom(const void *object_pointer, const struct 
     struct Param_header phdr;
     uint16_t key;
 
-    // reset cached param counter as we may be loading a dynamic var_info
-    invalidate_count();
-    
     if (!find_key_by_pointer(object_pointer, key)) {
         hal.console->printf("ERROR: Unable to find param pointer\n");
         return;
@@ -1575,6 +1597,9 @@ void AP_Param::load_object_from_eeprom(const void *object_pointer, const struct 
             ofs += type_size((enum ap_var_type)phdr.type) + sizeof(phdr);
         }
     }
+
+    // reset cached param counter as we may be loading a dynamic var_info
+    invalidate_count();
 }
 
 
@@ -1600,13 +1625,14 @@ AP_Param *AP_Param::first(ParamToken *token, enum ap_var_type *ptype)
 
 /// Returns the next variable in a group, recursing into groups
 /// as needed
-AP_Param *AP_Param::next_group(uint16_t vindex, const struct GroupInfo *group_info,
+AP_Param *AP_Param::next_group(const uint16_t vindex, const struct GroupInfo *group_info,
                                bool *found_current,
-                               uint32_t group_base,
-                               uint8_t group_shift,
-                               ptrdiff_t group_offset,
+                               const uint32_t group_base,
+                               const uint8_t group_shift,
+                               const ptrdiff_t group_offset,
                                ParamToken *token,
-                               enum ap_var_type *ptype)
+                               enum ap_var_type *ptype,
+                               bool skip_disabled)
 {
     enum ap_var_type type;
     for (uint8_t i=0;
@@ -1629,7 +1655,7 @@ AP_Param *AP_Param::next_group(uint16_t vindex, const struct GroupInfo *group_in
             }
 
             ap = next_group(vindex, ginfo, found_current, group_id(group_info, group_base, i, group_shift),
-                            group_shift + _group_level_shift, new_offset, token, ptype);
+                            group_shift + _group_level_shift, new_offset, token, ptype, skip_disabled);
             if (ap != nullptr) {
                 return ap;
             }
@@ -1646,10 +1672,24 @@ AP_Param *AP_Param::next_group(uint16_t vindex, const struct GroupInfo *group_in
                 if (!get_base(_var_info[vindex], base)) {
                     continue;
                 }
-                return (AP_Param*)(base + group_info[i].offset + group_offset);
+
+                AP_Param *ret = (AP_Param*)(base + group_info[i].offset + group_offset);
+
+                if (skip_disabled &&
+                    _hide_disabled_groups &&
+                    group_info[i].type == AP_PARAM_INT8 &&
+                    (group_info[i].flags & AP_PARAM_FLAG_ENABLE) &&
+                    ((AP_Int8 *)ret)->get() == 0) {
+                    token->last_disabled = 1;
+                }
+                return ret;
             }
             if (group_id(group_info, group_base, i, group_shift) == token->group_element) {
                 *found_current = true;
+                if (token->last_disabled) {
+                    token->last_disabled = 0;
+                    return nullptr;
+                }
                 if (type == AP_PARAM_VECTOR3F && token->idx < 3) {
                     // return the next element of the vector as a
                     // float
@@ -1673,7 +1713,7 @@ AP_Param *AP_Param::next_group(uint16_t vindex, const struct GroupInfo *group_in
 
 /// Returns the next variable in _var_info, recursing into groups
 /// as needed
-AP_Param *AP_Param::next(ParamToken *token, enum ap_var_type *ptype)
+AP_Param *AP_Param::next(ParamToken *token, enum ap_var_type *ptype, bool skip_disabled)
 {
     uint16_t i = token->key;
     bool found_current = false;
@@ -1707,7 +1747,7 @@ AP_Param *AP_Param::next(ParamToken *token, enum ap_var_type *ptype)
             if (group_info == nullptr) {
                 continue;
             }
-            AP_Param *ap = next_group(i, group_info, &found_current, 0, 0, 0, token, ptype);
+            AP_Param *ap = next_group(i, group_info, &found_current, 0, 0, 0, token, ptype, skip_disabled);
             if (ap != nullptr) {
                 return ap;
             }
@@ -1731,47 +1771,12 @@ AP_Param *AP_Param::next_scalar(ParamToken *token, enum ap_var_type *ptype)
 {
     AP_Param *ap;
     enum ap_var_type type;
-    while ((ap = next(token, &type)) != nullptr && type > AP_PARAM_FLOAT) ;
+    while ((ap = next(token, &type, true)) != nullptr && type > AP_PARAM_FLOAT) ;
 
-    if (ap != nullptr && type == AP_PARAM_INT8) {
-        /* 
-           check if this is an enable variable. To do that we need to
-           find the info structures for the variable
-         */
-        uint32_t group_element;
-        const struct GroupInfo *ginfo;
-        struct GroupNesting group_nesting {};
-        uint8_t idx;
-        const struct AP_Param::Info *info = ap->find_var_info_token(*token, &group_element,
-                                                                    ginfo, group_nesting, &idx);
-        if (info && ginfo &&
-            (ginfo->flags & AP_PARAM_FLAG_ENABLE) &&
-            ((AP_Int8 *)ap)->get() == 0 &&
-            _hide_disabled_groups) {
-            /*
-              this is a disabled parameter tree, include this
-              parameter but not others below it. We need to keep
-              looking until we go past the parameters in this object
-            */
-            ParamToken token2 = *token;
-            enum ap_var_type type2;
-            AP_Param *ap2;
-            while ((ap2 = next(&token2, &type2)) != nullptr) {
-                if (token2.key != token->key) {
-                    break;
-                }
-                if (group_nesting.level != 0 && (token->group_element & 0x3F) != (token2.group_element & 0x3F)) {
-                    break;
-                }
-                // update the returned token so the next() call goes from this point
-                *token = token2;
-            }
-            
+    if (ap != nullptr) {
+        if (ptype != nullptr) {
+            *ptype = type;
         }
-    }
-
-    if (ap != nullptr && ptype != nullptr) {
-        *ptype = type;
     }
     return ap;
 }
@@ -2405,7 +2410,7 @@ uint16_t AP_Param::count_parameters(void)
             _count_marker != _count_marker_done) &&
            limit--) {
         AP_Param  *vp;
-        AP_Param::ParamToken token;
+        AP_Param::ParamToken token {};
         uint16_t count = 0;
         uint16_t marker = _count_marker;
 
@@ -2570,6 +2575,36 @@ bool AP_Param::set_and_save_by_name(const char *name, float value)
     return false;
 }
 
+/*
+  set and save a value by name
+ */
+bool AP_Param::set_and_save_by_name_ifchanged(const char *name, float value)
+{
+    enum ap_var_type vtype;
+    AP_Param *vp = find(name, &vtype);
+    if (vp == nullptr) {
+        return false;
+    }
+    switch (vtype) {
+    case AP_PARAM_INT8:
+        ((AP_Int8 *)vp)->set_and_save_ifchanged(value);
+        return true;
+    case AP_PARAM_INT16:
+        ((AP_Int16 *)vp)->set_and_save_ifchanged(value);
+        return true;
+    case AP_PARAM_INT32:
+        ((AP_Int32 *)vp)->set_and_save_ifchanged(value);
+        return true;
+    case AP_PARAM_FLOAT:
+        ((AP_Float *)vp)->set_and_save_ifchanged(value);
+        return true;
+    default:
+        break;
+    }
+    // not a supported type
+    return false;
+}
+
 #if AP_PARAM_KEY_DUMP
 /*
   do not remove this show_all() code, it is essential for debugging
@@ -2582,16 +2617,16 @@ void AP_Param::show(const AP_Param *ap, const char *s,
 {
     switch (type) {
     case AP_PARAM_INT8:
-        port->printf("%s: %d\n", s, (int)((AP_Int8 *)ap)->get());
+        ::printf("%s: %d\n", s, (int)((AP_Int8 *)ap)->get());
         break;
     case AP_PARAM_INT16:
-        port->printf("%s: %d\n", s, (int)((AP_Int16 *)ap)->get());
+        ::printf("%s: %d\n", s, (int)((AP_Int16 *)ap)->get());
         break;
     case AP_PARAM_INT32:
-        port->printf("%s: %ld\n", s, (long)((AP_Int32 *)ap)->get());
+        ::printf("%s: %ld\n", s, (long)((AP_Int32 *)ap)->get());
         break;
     case AP_PARAM_FLOAT:
-        port->printf("%s: %f\n", s, (double)((AP_Float *)ap)->get());
+        ::printf("%s: %f\n", s, (double)((AP_Float *)ap)->get());
         break;
     default:
         break;
@@ -2619,7 +2654,7 @@ void AP_Param::show_all(AP_HAL::BetterStream *port, bool showKeyValues)
          ap;
          ap=AP_Param::next_scalar(&token, &type)) {
         if (showKeyValues) {
-            port->printf("Key %u: Index %u: GroupElement %u  :  ", (unsigned)token.key, (unsigned)token.idx, (unsigned)token.group_element);
+            ::printf("Key %u: Index %u: GroupElement %u  :  ", (unsigned)_var_info[token.key].key, (unsigned)token.idx, (unsigned)token.group_element);
         }
         show(ap, token, type, port);
         hal.scheduler->delay(1);

@@ -163,6 +163,10 @@ static RCInput_SoloLink rcinDriver;
 static RCInput_Navio2 rcinDriver;
 #elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_RST_ZYNQ
 static RCInput_RCProtocol rcinDriver{"/dev/ttyPS0", NULL};
+#elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_VNAV
+// this is needed to allow for RC input using SERIALn_PROTOCOL=23. No fd is opened
+// in the linux driver and instead user needs to provide a uart via SERIALn_PROTOCOL
+static RCInput_RCProtocol rcinDriver{nullptr, nullptr};
 #else
 static RCInput rcinDriver;
 #endif
@@ -189,7 +193,7 @@ static RCOutput_PCA9685 rcoutDriver(i2c_mgr_instance.get_device(1, PCA9685_QUATE
 #elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_DARK
 static RCOutput_PCA9685 rcoutDriver(i2c_mgr_instance.get_device(1, PCA9685_QUINARY_ADDRESS), 0, 0, RPI_GPIO_<27>());
 #elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_NAVIGATOR
-static RCOutput_PCA9685 rcoutDriver(i2c_mgr_instance.get_device(1, PCA9685_PRIMARY_ADDRESS), 0, 0, RPI_GPIO_<27>());
+static RCOutput_PCA9685 rcoutDriver(i2c_mgr_instance.get_device(4, PCA9685_PRIMARY_ADDRESS), 24576000, 0, RPI_GPIO_<26>());
 #elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_ZYNQ || \
       CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_OCPOC_ZYNQ
 static RCOutput_ZYNQ rcoutDriver;
@@ -292,8 +296,6 @@ void HAL_Linux::run(int argc, char* const argv[], Callbacks* callbacks) const
     const char *module_path = AP_MODULE_DEFAULT_DIRECTORY;
 #endif
     
-    assert(callbacks);
-
     int opt;
     const struct GetOptLong::option options[] = {
         {"uartA",         true,  0, 'A'},
@@ -309,6 +311,7 @@ void HAL_Linux::run(int argc, char* const argv[], Callbacks* callbacks) const
         {"terrain-directory",   true,  0, 't'},
         {"storage-directory",   true,  0, 's'},
         {"module-directory",    true,  0, 'M'},
+        {"defaults",            true,  0, 'd'},
         {"help",                false,  0, 'h'},
         {0, false, 0, 0}
     };
@@ -362,6 +365,9 @@ void HAL_Linux::run(int argc, char* const argv[], Callbacks* callbacks) const
             module_path = gopt.optarg;
             break;
 #endif
+        case 'd':
+            utilInstance.set_custom_defaults_path(gopt.optarg);
+            break;
         case 'h':
             _usage();
             exit(0);

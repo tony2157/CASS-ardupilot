@@ -87,6 +87,7 @@
 #define AP_PARAM_FRAME_SUB          (1<<3)
 #define AP_PARAM_FRAME_TRICOPTER    (1<<4)
 #define AP_PARAM_FRAME_HELI         (1<<5)
+#define AP_PARAM_FRAME_BLIMP        (1<<6)
 
 // a variant of offsetof() to work around C++ restrictions.
 // this can only be used when the offset of a variable in a object
@@ -210,8 +211,9 @@ public:
     // a token used for first()/next() state
     typedef struct {
         uint32_t key : 9;
-        uint32_t idx : 5; // offset into array types
+        uint32_t idx : 4; // offset into array types
         uint32_t group_element : 18;
+        uint32_t last_disabled : 1;
     } ParamToken;
 
 
@@ -302,6 +304,7 @@ public:
     /// @param  value           The new value
     /// @return                 true if the variable is found
     static bool set_and_save_by_name(const char *name, float value);
+    static bool set_and_save_by_name_ifchanged(const char *name, float value);
     // name helper for scripting
     static bool set_and_save(const char *name, float value) { return set_and_save_by_name(name, value); };
 
@@ -352,7 +355,7 @@ public:
     ///
     /// @return                True if the variable was saved successfully.
     ///
-    void save_sync(bool force_save=false);
+    void save_sync(bool force_save, bool send_to_gcs);
 
     /// flush all pending parameter saves
     /// used on reboot
@@ -438,6 +441,13 @@ public:
     static void         convert_parent_class(uint8_t param_key, void *object_pointer,
                                              const struct AP_Param::GroupInfo *group_info);
 
+    /*
+      fetch a parameter value based on the index within a group. This
+      is used to find the old value of a parameter that has been
+      removed from an object.
+    */
+    static bool get_param_by_index(void *obj_ptr, uint8_t idx, ap_var_type old_ptype, void *pvalue);
+    
     /// Erase all variables in EEPROM.
     ///
     static void         erase_all(void);
@@ -451,7 +461,7 @@ public:
 
     /// Returns the next variable in _var_info, recursing into groups
     /// as needed
-    static AP_Param *      next(ParamToken *token, enum ap_var_type *ptype);
+    static AP_Param *      next(ParamToken *token, enum ap_var_type *ptype, bool skip_disabled=false);
 
     /// Returns the next scalar variable in _var_info, recursing into groups
     /// as needed
@@ -645,14 +655,15 @@ private:
                                     uint16_t ofs,
                                     uint8_t size);
     static AP_Param *           next_group(
-                                    uint16_t vindex, 
+                                    const uint16_t vindex,
                                     const struct GroupInfo *group_info,
                                     bool *found_current,
-                                    uint32_t group_base,
-                                    uint8_t group_shift,
-                                    ptrdiff_t group_offset,
+                                    const uint32_t group_base,
+                                    const uint8_t group_shift,
+                                    const ptrdiff_t group_offset,
                                     ParamToken *token,
-                                    enum ap_var_type *ptype);
+                                    enum ap_var_type *ptype,
+                                    bool skip_disabled);
 
     // find a default value given a pointer to a default value in flash
     static float get_default_value(const AP_Param *object_ptr, const float *def_value_ptr);

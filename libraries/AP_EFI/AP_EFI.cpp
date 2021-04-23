@@ -72,18 +72,20 @@ void AP_EFI::init(void)
         // Init called twice, perhaps
         return;
     }
-    // Check for MegaSquirt Serial EFI
-    switch (type) {
-        case EFI_COMMUNICATION_TYPE_NONE:
-            break;
-        case EFI_COMMUNICATION_TYPE_SERIAL_MS:
-            backend = new AP_EFI_Serial_MS(*this);
-            break;
-        case EFI_COMMUNICATION_TYPE_NWPMU:
+    switch ((Type)type.get()) {
+    case Type::NONE:
+        break;
+    case Type::MegaSquirt:
+        backend = new AP_EFI_Serial_MS(*this);
+        break;
+    case Type::NWPMU:
 #if HAL_EFI_NWPWU_ENABLED
-            backend = new AP_EFI_NWPMU(*this);
+        backend = new AP_EFI_NWPMU(*this);
 #endif
-            break;
+        break;
+    default:
+        gcs().send_text(MAV_SEVERITY_INFO, "Unknown EFI type");
+        break;
     }
 }
 
@@ -225,8 +227,8 @@ void AP_EFI::send_mavlink_status(mavlink_channel_t chan)
         state.spark_dwell_time_ms,
         state.atmospheric_pressure_kpa,
         state.intake_manifold_pressure_kpa,
-        (state.intake_manifold_temperature - 273.0f),
-        (state.cylinder_status[0].cylinder_head_temperature - 273.0f),
+        (state.intake_manifold_temperature - C_TO_KELVIN),
+        (state.cylinder_status[0].cylinder_head_temperature - C_TO_KELVIN),
         state.cylinder_status[0].ignition_timing_deg,
         state.cylinder_status[0].injection_time_ms,
         0, 0, 0);

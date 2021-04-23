@@ -350,15 +350,20 @@ void RangeFinder::detect_instance(uint8_t instance, uint8_t& serial_instance)
             }
         }
         break;
-    case Type::MBI2C:
+    case Type::MBI2C: {
+        uint8_t addr = AP_RANGE_FINDER_MAXSONARI2CXL_DEFAULT_ADDR;
+        if (params[instance].address != 0) {
+            addr = params[instance].address;
+        }
         FOREACH_I2C(i) {
             if (_add_backend(AP_RangeFinder_MaxsonarI2CXL::detect(state[instance], params[instance],
-                                                                  hal.i2c_mgr->get_device(i, AP_RANGE_FINDER_MAXSONARI2CXL_DEFAULT_ADDR)),
+                                                                  hal.i2c_mgr->get_device(i, addr)),
                              instance)) {
                 break;
             }
         }
         break;
+    }
     case Type::LWI2C:
         if (params[instance].address) {
             // the LW20 needs a long time to boot up, so we delay 1.5s here
@@ -739,8 +744,18 @@ MAV_DISTANCE_SENSOR RangeFinder::get_mav_distance_sensor_type_orient(enum Rotati
     return backend->get_mav_distance_sensor_type();
 }
 
+// get temperature reading in C.  returns true on success and populates temp argument
+bool RangeFinder::get_temp(enum Rotation orientation, float &temp)
+{
+    AP_RangeFinder_Backend *backend = find_instance(orientation);
+    if (backend == nullptr) {
+        return false;
+    }
+    return backend->get_temp(temp);
+}
+
 // Write an RFND (rangefinder) packet
-void RangeFinder::Log_RFND()
+void RangeFinder::Log_RFND() const
 {
     if (_log_rfnd_bit == uint32_t(-1)) {
         return;
