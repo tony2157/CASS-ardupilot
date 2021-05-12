@@ -23,7 +23,6 @@
 #define WPNAV_WP_SPEED_DOWN             150.0f      // default maximum descent velocity
 
 #define WPNAV_WP_ACCEL_Z_DEFAULT        100.0f      // default vertical acceleration between waypoints in cm/s/s
-#define WPNAV_YAW_VEL_MIN                   10      // target velocity must be at least 10cm/s for vehicle's yaw to change
 
 class AC_WPNav
 {
@@ -117,11 +116,6 @@ public:
     bool set_wp_destination_NED(const Vector3f& destination_NED);
     bool set_wp_destination_next_NED(const Vector3f& destination_NED);
 
-    /// shift_wp_origin_to_current_pos - shifts the origin and destination so the origin starts at the current position
-    ///     used to reset the position just before takeoff
-    ///     relies on set_wp_destination or set_wp_origin_and_destination having been called first
-    void shift_wp_origin_to_current_pos();
-
     /// shifts the origin and destination horizontally to the current position
     ///     used to reset the track when taking off without horizontal position control
     ///     relies on set_wp_destination or set_wp_origin_and_destination having been called first
@@ -162,8 +156,8 @@ public:
     ///
 
     // get target yaw in centi-degrees (used for wp and spline navigation)
-    float get_yaw() const;
-    float get_yaw_rate_cds() const;
+    float get_yaw() const { return _pos_control.get_yaw_cd(); }
+    float get_yaw_rate_cds() const { return _pos_control.get_yaw_rate_cds(); }
 
     /// set_spline_destination waypoint using location class
     ///     returns false if conversion from location to vector from ekf origin cannot be calculated
@@ -198,8 +192,9 @@ public:
     ///
 
     /// get desired roll, pitch which should be fed into stabilize controllers
-    float get_roll() const { return _pos_control.get_roll(); }
-    float get_pitch() const { return _pos_control.get_pitch(); }
+    float get_roll() const { return _pos_control.get_roll_cd(); }
+    float get_pitch() const { return _pos_control.get_pitch_cd(); }
+    Vector3f get_thrust_vector() const { return _pos_control.get_thrust_vector(); }
 
     /// advance_wp_target_along_track - move target location along track from origin to destination
     bool advance_wp_target_along_track(float dt);
@@ -227,10 +222,6 @@ protected:
     // convert location to vector from ekf origin.  terrain_alt is set to true if resulting vector's z-axis should be treated as alt-above-terrain
     //      returns false if conversion failed (likely because terrain data was not available)
     bool get_vector_NEU(const Location &loc, Vector3f &vec, bool &terrain_alt);
-
-    // set heading used for spline and waypoint navigation
-    void set_yaw_cd(float heading_cd);
-    void set_yaw_rate_cds(float yaw_rate_cds);
 
     // helper function to calculate scurve jerk and jerk_time values
     // updates _scurve_jerk and _scurve_jerk_time
@@ -274,8 +265,6 @@ protected:
     Vector3f    _destination;           // target destination in cm from ekf origin
     float       _track_error_xy;        // horizontal error of the actual position vs the desired position
     float       _track_scalar_dt;       // time compression multiplier to slow the progress along the track
-    float       _yaw;                   // current yaw heading in centi-degrees based on track direction
-    float       _yaw_rate_cds;          // current yaw rate in centi-degrees/second based on track curvature
 
     // terrain following variables
     bool        _terrain_alt;   // true if origin and destination.z are alt-above-terrain, false if alt-above-ekf-origin

@@ -265,6 +265,8 @@ const AP_Param::GroupInfo SITL::var_info3[] = {
     // @Units: m
     // @User: Advanced
 
+    AP_GROUPINFO("ESC_TELEM", 40, SITL, esc_telem, 1),
+
     // user settable parameters for the 1st airspeed sensor
     AP_GROUPINFO("ARSPD_RND",     50, SITL,  arspd_noise[0], 2.0),
     AP_GROUPINFO("ARSPD_OFS",     51, SITL,  arspd_offset[0], 2013),
@@ -425,6 +427,12 @@ const AP_Param::GroupInfo SITL::var_ins[] = {
     AP_GROUPINFO("ACC2_SCAL",    23, SITL, accel_scale[1], 0),
     AP_GROUPINFO("ACC3_SCAL",    24, SITL, accel_scale[2], 0),
     AP_GROUPINFO("ACC_TRIM",     25, SITL, accel_trim, 0),
+
+    // @Param: SAIL_TYPE
+    // @DisplayName: Sailboat simulation sail type
+    // @Description: 0: mainsail with sheet, 1: directly actuated wing
+    AP_GROUPINFO("SAIL_TYPE",     26, SITL, sail_type, 0),
+
 
     // the IMUT parameters must be last due to the enable parameters
     AP_SUBGROUPINFO(imu_tcal[0], "IMUT1_", 61, SITL, AP_InertialSensor::TCal),
